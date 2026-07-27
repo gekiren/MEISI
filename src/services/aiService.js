@@ -1,4 +1,5 @@
 import { analyzeBusinessCardWithGemini } from './geminiService';
+import { DEFAULT_WORKER_PROXY_URL } from '../config/constants';
 
 /**
  * DeepSeek V4 API (OpenAI互換) による名刺画像・テキスト構造化サービス
@@ -71,7 +72,8 @@ export async function analyzeBusinessCardWithDeepSeek(base64Image, apiKey, model
  * Cloudflare Worker プロキシ経由の解析リクエスト
  */
 export async function analyzeCardWithWorkerProxy(base64Image, proxyUrl) {
-  const cleanUrl = proxyUrl.replace(/\/$/, '') + '/api/analyze-card';
+  const targetProxy = proxyUrl || DEFAULT_WORKER_PROXY_URL;
+  const cleanUrl = targetProxy.replace(/\/$/, '') + '/api/analyze-card';
 
   const response = await fetch(cleanUrl, {
     method: 'POST',
@@ -88,7 +90,7 @@ export async function analyzeCardWithWorkerProxy(base64Image, proxyUrl) {
 }
 
 /**
- * 統合解析関数（Worker プロキシ → ダイレクト Gemini 3.6 Flash → DeepSeek V4 フォールバック）
+ * 統合解析関数（事前組み込み Worker プロキシ → ダイレクト Gemini 3.6 Flash → DeepSeek V4 フォールバック）
  */
 export async function analyzeBusinessCardWithFallback(
   base64Image,
@@ -97,21 +99,23 @@ export async function analyzeBusinessCardWithFallback(
   workerProxyUrl,
   onFallbackNotice
 ) {
-  // A. Worker プロキシ URL が設定されている場合優先
-  if (workerProxyUrl && workerProxyUrl.trim()) {
+  // 事前組込み済みの Worker プロキシ URL を優先使用（ユーザーの手動登録不要）
+  const activeProxyUrl = workerProxyUrl || DEFAULT_WORKER_PROXY_URL;
+
+  if (activeProxyUrl) {
     try {
-      console.log('Using Cloudflare Worker Proxy for AI analysis...');
-      if (onFallbackNotice) onFallbackNotice('Cloudflare Worker プロキシ経由で AI 解析中 (Gemini 3.6 Flash ⇄ DeepSeek V4)...');
-      return await analyzeCardWithWorkerProxy(base64Image, workerProxyUrl.trim());
+      console.log('Using pre-configured Cloudflare Worker Proxy:', activeProxyUrl);
+      if (onFallbackNotice) onFallbackNotice('組み込み Cloudflare Worker プロキシ経由で AI 解析中 (Gemini 3.6 Flash ⇄ DeepSeek V4)...');
+      return await analyzeCardWithWorkerProxy(base64Image, activeProxyUrl);
     } catch (proxyError) {
-      console.warn('Cloudflare Worker Proxy failed, attempting direct API keys if available:', proxyError);
+      console.warn('Pre-configured Cloudflare Worker Proxy failed, attempting direct API keys if provided:', proxyError);
       if (!geminiApiKey && !deepSeekApiKey) {
         throw new Error(`Cloudflare Worker プロキシ通信エラー: ${proxyError.message}`);
       }
     }
   }
 
-  // B. 直打ち Gemini 3.6 Flash
+  // 直打ち Gemini 3.6 Flash
   if (geminiApiKey) {
     try {
       console.log('Attempting analysis directly with Gemini 3.6 Flash...');
@@ -126,16 +130,16 @@ export async function analyzeBusinessCardWithFallback(
         }
         return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash');
       } else {
-        throw new Error(`Gemini 3.6 Flash エラー: ${geminiError.message}。DeepSeek V4 APIキーを設定することをお勧めします。`);
+        throw new Error(`Gemini 3.6 Flash エラー: ${geminiError.message}`);
       }
     }
   }
 
-  // C. 直打ち DeepSeek V4
+  // 直打ち DeepSeek V4
   if (deepSeekApiKey) {
     if (onFallbackNotice) onFallbackNotice('DeepSeek V4 で名刺情報を直接解析中...');
     return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash');
   }
 
-  throw new Error('Cloudflare Worker プロキシ URL、または Gemini / DeepSeek の API キーを設定してください。');
+  throw new Error('AI 解析サーバーへの接続に失敗しました。');
 }
