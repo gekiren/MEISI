@@ -1,10 +1,17 @@
 import React, { useState, useRef } from 'react';
-import { X, Camera, Sparkles, AlertCircle, CheckCircle2, Tag, RefreshCw } from 'lucide-react';
+import { X, Camera, Sparkles, AlertCircle, CheckCircle2, Tag } from 'lucide-react';
 import { analyzeBusinessCardWithFallback } from '../services/aiService';
 import { addCard } from '../db/db';
 import confetti from 'canvas-confetti';
 
-export default function ScannerModal({ isOpen, onClose, geminiApiKey, deepSeekApiKey, onCardAdded }) {
+export default function ScannerModal({
+  isOpen,
+  onClose,
+  geminiApiKey,
+  deepSeekApiKey,
+  workerProxyUrl,
+  onCardAdded
+}) {
   const [selectedImage, setSelectedImage] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [statusNotice, setStatusNotice] = useState(null);
@@ -31,13 +38,13 @@ export default function ScannerModal({ isOpen, onClose, geminiApiKey, deepSeekAp
   };
 
   const startAiAnalysis = async (base64) => {
-    if (!geminiApiKey && !deepSeekApiKey) {
-      setErrorMsg('Gemini または DeepSeek の APIキーが設定されていません。「APIキー」設定からキーを入力してください。');
+    if (!workerProxyUrl && !geminiApiKey && !deepSeekApiKey) {
+      setErrorMsg('Cloudflare Worker プロキシ URL または APIキーが設定されていません。「APIキー」設定から入力してください。');
       return;
     }
 
     setIsAnalyzing(true);
-    setStatusNotice('Gemini AI で名刺情報を解析中...');
+    setStatusNotice('AI 解析を実行中...');
     setErrorMsg(null);
 
     try {
@@ -45,6 +52,7 @@ export default function ScannerModal({ isOpen, onClose, geminiApiKey, deepSeekAp
         base64,
         geminiApiKey,
         deepSeekApiKey,
+        workerProxyUrl,
         (fallbackMsg) => {
           setStatusNotice(fallbackMsg);
         }
@@ -124,7 +132,7 @@ export default function ScannerModal({ isOpen, onClose, geminiApiKey, deepSeekAp
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Camera size={22} color="#6366F1" />
-            <h2 className="modal-title">名刺スキャン & AI自動解析 (Gemini / DeepSeek)</h2>
+            <h2 className="modal-title">名刺スキャン & AI自動解析</h2>
           </div>
           <button className="btn btn-secondary btn-icon" onClick={handleResetAndClose}>
             <X size={18} />
@@ -158,7 +166,7 @@ export default function ScannerModal({ isOpen, onClose, geminiApiKey, deepSeekAp
               カメラで撮影 / 画像をアップロード
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              名刺を撮影すると、Gemini AI (混雑時は DeepSeek) が自動で情報抽出し登録します
+              名刺を撮影すると、AI (Gemini 3.6 Flash / DeepSeek V4) が自動で情報抽出します
             </p>
           </div>
         )}

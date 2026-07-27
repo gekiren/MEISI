@@ -7,7 +7,7 @@ import CallKitModal from './components/CallKitModal';
 import CardDetailModal from './components/CardDetailModal';
 import { getAllCards, updateCard, addCard } from './db/db';
 import { exportCardsToCSV } from './services/csvService';
-import { PhoneIncoming, ShieldCheck, Sparkles, Cpu } from 'lucide-react';
+import { PhoneIncoming, ShieldCheck, Sparkles, Cpu, Server } from 'lucide-react';
 
 export default function App() {
   const [cards, setCards] = useState([]);
@@ -16,6 +16,7 @@ export default function App() {
 
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [deepSeekApiKey, setDeepSeekApiKey] = useState(() => localStorage.getItem('deepseek_api_key') || '');
+  const [workerProxyUrl, setWorkerProxyUrl] = useState(() => localStorage.getItem('worker_proxy_url') || '');
 
   // モーダル制御ステート
   const [isScanOpen, setIsScanOpen] = useState(false);
@@ -36,11 +37,13 @@ export default function App() {
     loadCards();
   }, []);
 
-  const handleSaveApiKeys = (geminiKey, deepSeekKey) => {
+  const handleSaveApiKeys = (geminiKey, deepSeekKey, proxyUrl) => {
     setGeminiApiKey(geminiKey);
     setDeepSeekApiKey(deepSeekKey);
+    setWorkerProxyUrl(proxyUrl);
     localStorage.setItem('gemini_api_key', geminiKey);
     localStorage.setItem('deepseek_api_key', deepSeekKey);
+    localStorage.setItem('worker_proxy_url', proxyUrl);
   };
 
   const handleToggleFavorite = async (card) => {
@@ -134,9 +137,15 @@ export default function App() {
             <div style={{ fontWeight: '700', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span>CallKit 着信相手識別機能</span>
               <span className="callkit-badge">連絡先アプリ汚染なし</span>
-              <span style={{ fontSize: '0.75rem', background: 'rgba(99, 102, 241, 0.2)', color: '#A5B4FC', padding: '2px 8px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <Cpu size={12} /> Gemini 3.6 Flash ⇄ DeepSeek V4 自動切り替え対応
-              </span>
+              {workerProxyUrl ? (
+                <span style={{ fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.2)', color: '#6EE7B7', padding: '2px 8px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <Server size={12} /> Cloudflare Worker プロキシ通信中
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.75rem', background: 'rgba(99, 102, 241, 0.2)', color: '#A5B4FC', padding: '2px 8px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <Cpu size={12} /> Gemini 3.6 Flash ⇄ DeepSeek V4
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               登録済み電話番号 ({cards.filter(c => c.phone || c.mobile).length} 件) は標準電話帳に登録せず着信時に名前が表示されます
@@ -187,6 +196,7 @@ export default function App() {
         onClose={() => setIsScanOpen(false)}
         geminiApiKey={geminiApiKey}
         deepSeekApiKey={deepSeekApiKey}
+        workerProxyUrl={workerProxyUrl}
         onCardAdded={loadCards}
       />
 
@@ -195,6 +205,7 @@ export default function App() {
         onClose={() => setIsApiKeyOpen(false)}
         geminiApiKey={geminiApiKey}
         deepSeekApiKey={deepSeekApiKey}
+        workerProxyUrl={workerProxyUrl}
         onSaveApiKeys={handleSaveApiKeys}
       />
 

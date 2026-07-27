@@ -2,7 +2,6 @@ import { analyzeBusinessCardWithGemini } from './geminiService';
 
 /**
  * DeepSeek V4 API (OpenAI互換) による名刺画像・テキスト構造化サービス
- * 最新モデル: deepseek-v4-flash
  */
 export async function analyzeBusinessCardWithDeepSeek(base64Image, apiKey, modelName = 'deepseek-v4-flash') {
   if (!apiKey) {
@@ -19,19 +18,14 @@ export async function analyzeBusinessCardWithDeepSeek(base64Image, apiKey, model
   }
 
   const prompt = `
-あなたは名刺情報の高精度解析AIです。名刺画像データから記載されている情報を正確に抽出して指定のJSONフォーマットで返却してください。
-
-【出力ルール】
-- 余計な説明テキストやMarkdown修飾 (例: \`\`\`json) は除外し、純粋なJSONオブジェクトのみを出力してください。
-- 判別できない項目は空文字 "" にしてください。
-
-【返却JSONフォーマット】
+名刺画像から情報を抽出してJSONで返却してください。
+【返却フォーマット】
 {
   "name": "氏名",
   "reading": "フリガナ",
   "company": "会社名",
   "department": "部署名",
-  "title": "役職",
+  "title": "役職名",
   "phone": "固定電話番号",
   "mobile": "携帯電話番号",
   "email": "メールアドレス",
@@ -43,68 +37,93 @@ export async function analyzeBusinessCardWithDeepSeek(base64Image, apiKey, model
 }
 `;
 
-  const url = 'https://api.deepseek.com/chat/completions';
-
-  const requestBody = {
-    model: modelName,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          {
-            type: 'image_url',
-            image_url: {
-              url: base64Image.startsWith('data:') ? base64Image : `data:${mimeType};base64,${cleanBase64}`
-            }
-          }
-        ]
-      }
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.1
-  };
-
-  const response = await fetch(url, {
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify({
+      model: modelName,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: base64Image.startsWith('data:') ? base64Image : `data:${mimeType};base64,${cleanBase64}` } }
+        ]
+      }],
+      response_format: { type: 'json_object' },
+      temperature: 0.1
+    })
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `DeepSeek V4 APIエラー (${response.status})`);
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `DeepSeek V4 APIエラー (${response.status})`);
   }
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error('DeepSeek V4 APIから有効な応答が得られませんでした。');
-  }
-
   return JSON.parse(content.trim());
 }
 
 /**
- * Gemini 3.6 Flash を優先し、混雑・エラー時に DeepSeek V4 へ自動フォールバックする統合関数
+ * Cloudflare Worker プロキシ経由の解析リクエスト
  */
-export async function analyzeBusinessCardWithFallback(base64Image, geminiApiKey, deepSeekApiKey, onFallbackNotice) {
-  // 1. まず Gemini 3.6 Flash API を呼び出し
+export async function analyzeCardWithWorkerProxy(base64Image, proxyUrl) {
+  const cleanUrl = proxyUrl.replace(/\/$/, '') + '/api/analyze-card';
+
+  const response = await fetch(cleanUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: base64Image })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `Workerプロキシ通信エラー (${response.status})`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * 統合解析関数（Worker プロキシ → ダイレクト Gemini 3.6 Flash → DeepSeek V4 フォールバック）
+ */
+export async function analyzeBusinessCardWithFallback(
+  base64Image,
+  geminiApiKey,
+  deepSeekApiKey,
+  workerProxyUrl,
+  onFallbackNotice
+) {
+  // A. Worker プロキシ URL が設定されている場合優先
+  if (workerProxyUrl && workerProxyUrl.trim()) {
+    try {
+      console.log('Using Cloudflare Worker Proxy for AI analysis...');
+      if (onFallbackNotice) onFallbackNotice('Cloudflare Worker プロキシ経由で AI 解析中 (Gemini 3.6 Flash ⇄ DeepSeek V4)...');
+      return await analyzeCardWithWorkerProxy(base64Image, workerProxyUrl.trim());
+    } catch (proxyError) {
+      console.warn('Cloudflare Worker Proxy failed, attempting direct API keys if available:', proxyError);
+      if (!geminiApiKey && !deepSeekApiKey) {
+        throw new Error(`Cloudflare Worker プロキシ通信エラー: ${proxyError.message}`);
+      }
+    }
+  }
+
+  // B. 直打ち Gemini 3.6 Flash
   if (geminiApiKey) {
     try {
-      console.log('Attempting analysis with Gemini 3.6 Flash...');
+      console.log('Attempting analysis directly with Gemini 3.6 Flash...');
+      if (onFallbackNotice) onFallbackNotice('Gemini 3.6 Flash で名刺情報を解析中...');
       return await analyzeBusinessCardWithGemini(base64Image, geminiApiKey, 'gemini-3.6-flash');
     } catch (geminiError) {
-      console.warn('Gemini 3.6 Flash API failed or congested:', geminiError);
+      console.warn('Gemini 3.6 Flash direct API failed or congested:', geminiError);
 
       if (deepSeekApiKey) {
         if (onFallbackNotice) {
           onFallbackNotice(`Gemini 3.6 Flash 混雑のため、DeepSeek V4 API に自動切り替えして解析中...`);
         }
-        console.log('Falling back to DeepSeek V4 API...');
         return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash');
       } else {
         throw new Error(`Gemini 3.6 Flash エラー: ${geminiError.message}。DeepSeek V4 APIキーを設定することをお勧めします。`);
@@ -112,11 +131,11 @@ export async function analyzeBusinessCardWithFallback(base64Image, geminiApiKey,
     }
   }
 
-  // 2. DeepSeek V4 キーのみある場合
+  // C. 直打ち DeepSeek V4
   if (deepSeekApiKey) {
-    console.log('Gemini key absent, using DeepSeek V4 API directly...');
+    if (onFallbackNotice) onFallbackNotice('DeepSeek V4 で名刺情報を直接解析中...');
     return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash');
   }
 
-  throw new Error('Gemini 3.6 Flash または DeepSeek V4 の API キーを設定してください。');
+  throw new Error('Cloudflare Worker プロキシ URL、または Gemini / DeepSeek の API キーを設定してください。');
 }
