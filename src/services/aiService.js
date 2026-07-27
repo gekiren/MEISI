@@ -1,9 +1,10 @@
 import { analyzeBusinessCardWithGemini } from './geminiService';
 
 /**
- * DeepSeek API (OpenAI互換) による名刺画像・テキスト構造化サービス
+ * DeepSeek V4 API (OpenAI互換) による名刺画像・テキスト構造化サービス
+ * 最新モデル: deepseek-v4-flash
  */
-export async function analyzeBusinessCardWithDeepSeek(base64Image, apiKey) {
+export async function analyzeBusinessCardWithDeepSeek(base64Image, apiKey, modelName = 'deepseek-v4-flash') {
   if (!apiKey) {
     throw new Error('DeepSeek APIキーが設定されていません。');
   }
@@ -45,7 +46,7 @@ export async function analyzeBusinessCardWithDeepSeek(base64Image, apiKey) {
   const url = 'https://api.deepseek.com/chat/completions';
 
   const requestBody = {
-    model: 'deepseek-chat',
+    model: modelName,
     messages: [
       {
         role: 'user',
@@ -75,49 +76,47 @@ export async function analyzeBusinessCardWithDeepSeek(base64Image, apiKey) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `DeepSeek APIエラー (${response.status})`);
+    throw new Error(errorData.error?.message || `DeepSeek V4 APIエラー (${response.status})`);
   }
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   if (!content) {
-    throw new Error('DeepSeek APIから有効な応答が得られませんでした。');
+    throw new Error('DeepSeek V4 APIから有効な応答が得られませんでした。');
   }
 
   return JSON.parse(content.trim());
 }
 
 /**
- * Gemini を優先し、エラーや混雑時に DeepSeek へ自動フォールバックする統合解析関数
+ * Gemini 3.6 Flash を優先し、混雑・エラー時に DeepSeek V4 へ自動フォールバックする統合関数
  */
 export async function analyzeBusinessCardWithFallback(base64Image, geminiApiKey, deepSeekApiKey, onFallbackNotice) {
-  // 1. まず Gemini API を呼び出し
+  // 1. まず Gemini 3.6 Flash API を呼び出し
   if (geminiApiKey) {
     try {
-      console.log('Attempting analysis with Gemini API...');
-      return await analyzeBusinessCardWithGemini(base64Image, geminiApiKey);
+      console.log('Attempting analysis with Gemini 3.6 Flash...');
+      return await analyzeBusinessCardWithGemini(base64Image, geminiApiKey, 'gemini-3.6-flash');
     } catch (geminiError) {
-      console.warn('Gemini API failed or congested:', geminiError);
+      console.warn('Gemini 3.6 Flash API failed or congested:', geminiError);
 
-      // DeepSeek キーがあり、Gemini で失敗した場合はフォールバック
       if (deepSeekApiKey) {
         if (onFallbackNotice) {
-          onFallbackNotice(`Gemini混雑・エラーのため、DeepSeek APIに自動切り替えして解析中... (${geminiError.message})`);
+          onFallbackNotice(`Gemini 3.6 Flash 混雑のため、DeepSeek V4 API に自動切り替えして解析中...`);
         }
-        console.log('Falling back to DeepSeek API...');
-        return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey);
+        console.log('Falling back to DeepSeek V4 API...');
+        return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash');
       } else {
-        // DeepSeek キーがない場合は Gemini のエラーをスロー
-        throw new Error(`Gemini APIエラー: ${geminiError.message}。フォールバック用のDeepSeek APIキーを設定することをお勧めします。`);
+        throw new Error(`Gemini 3.6 Flash エラー: ${geminiError.message}。DeepSeek V4 APIキーを設定することをお勧めします。`);
       }
     }
   }
 
-  // 2. Gemini キーがなく DeepSeek キーのみある場合
+  // 2. DeepSeek V4 キーのみある場合
   if (deepSeekApiKey) {
-    console.log('Gemini key absent, using DeepSeek API directly...');
-    return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey);
+    console.log('Gemini key absent, using DeepSeek V4 API directly...');
+    return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash');
   }
 
-  throw new Error('Gemini または DeepSeek の API キーを設定してください。');
+  throw new Error('Gemini 3.6 Flash または DeepSeek V4 の API キーを設定してください。');
 }

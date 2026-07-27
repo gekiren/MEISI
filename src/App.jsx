@@ -135,7 +135,7 @@ export default function App() {
               <span>CallKit 着信相手識別機能</span>
               <span className="callkit-badge">連絡先アプリ汚染なし</span>
               <span style={{ fontSize: '0.75rem', background: 'rgba(99, 102, 241, 0.2)', color: '#A5B4FC', padding: '2px 8px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <Cpu size={12} /> Gemini ⇄ DeepSeek 自動切り替え対応
+                <Cpu size={12} /> Gemini 3.6 Flash ⇄ DeepSeek V4 自動切り替え対応
               </span>
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>

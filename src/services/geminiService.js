@@ -1,8 +1,9 @@
 /**
  * Gemini Vision API を使用して名刺画像から情報を解析するサービス
+ * 最新モデル: gemini-3.6-flash
  */
 
-export async function analyzeBusinessCardWithGemini(base64Image, apiKey, modelName = 'gemini-2.5-flash') {
+export async function analyzeBusinessCardWithGemini(base64Image, apiKey, modelName = 'gemini-3.6-flash') {
   if (!apiKey) {
     throw new Error('Gemini APIキーが設定されていません。');
   }
@@ -74,7 +75,7 @@ export async function analyzeBusinessCardWithGemini(base64Image, apiKey, modelNa
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `APIエラー (${response.status})`);
+    throw new Error(errorData.error?.message || `Gemini APIエラー (${response.status})`);
   }
 
   const data = await response.json();

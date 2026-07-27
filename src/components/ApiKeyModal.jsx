@@ -15,11 +15,11 @@ export default function ApiKeyModal({ isOpen, onClose, geminiApiKey, deepSeekApi
 
   const handleSave = () => {
     if (!inputGemini.trim() && !inputDeepSeek.trim()) {
-      setStatusMessage({ type: 'error', text: 'Gemini または DeepSeek のどちらか最低1つのAPIキーを入力してください。' });
+      setStatusMessage({ type: 'error', text: 'Gemini 3.6 Flash または DeepSeek V4 のどちらか最低1つのAPIキーを入力してください。' });
       return;
     }
     onSaveApiKeys(inputGemini.trim(), inputDeepSeek.trim());
-    setStatusMessage({ type: 'success', text: 'AI APIキーの設定を保存しました！(Gemini ⇄ DeepSeek 自動フォールバック対応)' });
+    setStatusMessage({ type: 'success', text: '最新 AI APIキー設定を保存しました！(Gemini 3.6 Flash ⇄ DeepSeek V4 自動フォールバック対応)' });
     setTimeout(() => {
       onClose();
     }, 1200);
@@ -31,7 +31,7 @@ export default function ApiKeyModal({ isOpen, onClose, geminiApiKey, deepSeekApi
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Key size={22} color="#6366F1" />
-            <h2 className="modal-title">AI 解析 API キー設定 (Gemini & DeepSeek)</h2>
+            <h2 className="modal-title">AI 解析 API キー設定 (Gemini 3.6 Flash & DeepSeek V4)</h2>
           </div>
           <button className="btn btn-secondary btn-icon" onClick={onClose}>
             <X size={18} />
@@ -39,13 +39,13 @@ export default function ApiKeyModal({ isOpen, onClose, geminiApiKey, deepSeekApi
         </div>
 
         <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-          名刺のAI自動解析には <strong>Gemini API</strong> をメインで使用し、混雑や通信エラーが発生した場合は自動的に <strong>DeepSeek API</strong> へ切り替えて解析を継続します。
+          最新の <strong>Gemini 3.6 Flash</strong> を優先して高速解析し、混雑時には最新の <strong>DeepSeek V4 (deepseek-v4-flash)</strong> に自動切り替えして処理します。
         </p>
 
         <div className="form-group">
           <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Cpu size={16} color="#6366F1" />
-            <span>1. Google Gemini API Key (メイン)</span>
+            <span>1. Google Gemini 3.6 Flash API Key (メイン)</span>
           </label>
           <input
             type="password"
@@ -60,14 +60,14 @@ export default function ApiKeyModal({ isOpen, onClose, geminiApiKey, deepSeekApi
             rel="noopener noreferrer"
             style={{ fontSize: '0.75rem', color: 'var(--accent-secondary)', textDecoration: 'none', display: 'inline-block', marginTop: '4px' }}
           >
-            Google AI Studio で無料APIキーを取得 ↗
+            Google AI Studio で無料APIキーを取得 (gemini-3.6-flash 対応) ↗
           </a>
         </div>
 
         <div className="form-group" style={{ marginTop: '16px' }}>
           <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Cpu size={16} color="#06B6D4" />
-            <span>2. DeepSeek API Key (混雑・エラー時フォールバック用)</span>
+            <span>2. DeepSeek V4 API Key (自動フォールバック用)</span>
           </label>
           <input
             type="password"
@@ -82,7 +82,7 @@ export default function ApiKeyModal({ isOpen, onClose, geminiApiKey, deepSeekApi
             rel="noopener noreferrer"
             style={{ fontSize: '0.75rem', color: 'var(--accent-secondary)', textDecoration: 'none', display: 'inline-block', marginTop: '4px' }}
           >
-            DeepSeek Platform でAPIキーを取得 ↗
+            DeepSeek Platform でAPIキーを取得 (deepseek-v4-flash 対応) ↗
           </a>
         </div>
 
