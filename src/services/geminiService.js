@@ -2,12 +2,11 @@
  * Gemini Vision API を使用して名刺画像から情報を解析するサービス
  */
 
-export async function analyzeBusinessCard(base64Image, apiKey, modelName = 'gemini-2.5-flash') {
+export async function analyzeBusinessCardWithGemini(base64Image, apiKey, modelName = 'gemini-2.5-flash') {
   if (!apiKey) {
-    throw new Error('Gemini APIキーが設定されていません。設定画面からAPIキーを入力してください。');
+    throw new Error('Gemini APIキーが設定されていません。');
   }
 
-  // base64プレフィックスの除去 (例: data:image/jpeg;base64,...)
   let mimeType = 'image/jpeg';
   let cleanBase64 = base64Image;
 
@@ -65,40 +64,32 @@ export async function analyzeBusinessCard(base64Image, apiKey, modelName = 'gemi
     }
   };
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestBody)
+  });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || `APIエラー (${response.status})`);
-    }
-
-    const data = await response.json();
-    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!textResponse) {
-      throw new Error('Gemini APIから有効な応答が得られませんでした。');
-    }
-
-    // JSONパース（Markdownバックティックが含まれる場合のフォールバック処理）
-    let cleanJsonStr = textResponse.trim();
-    if (cleanJsonStr.startsWith('```json')) {
-      cleanJsonStr = cleanJsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
-    } else if (cleanJsonStr.startsWith('```')) {
-      cleanJsonStr = cleanJsonStr.replace(/^```\n?/, '').replace(/\n?```$/, '');
-    }
-
-    const parsedData = JSON.parse(cleanJsonStr);
-    return parsedData;
-
-  } catch (error) {
-    console.error('Gemini Card Analysis Error:', error);
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `APIエラー (${response.status})`);
   }
+
+  const data = await response.json();
+  const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!textResponse) {
+    throw new Error('Gemini APIから有効な応答が得られませんでした。');
+  }
+
+  let cleanJsonStr = textResponse.trim();
+  if (cleanJsonStr.startsWith('```json')) {
+    cleanJsonStr = cleanJsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
+  } else if (cleanJsonStr.startsWith('```')) {
+    cleanJsonStr = cleanJsonStr.replace(/^```\n?/, '').replace(/\n?```$/, '');
+  }
+
+  return JSON.parse(cleanJsonStr);
 }

@@ -7,13 +7,15 @@ import CallKitModal from './components/CallKitModal';
 import CardDetailModal from './components/CardDetailModal';
 import { getAllCards, updateCard, addCard } from './db/db';
 import { exportCardsToCSV } from './services/csvService';
-import { PhoneIncoming, ShieldCheck, Sparkles } from 'lucide-react';
+import { PhoneIncoming, ShieldCheck, Sparkles, Cpu } from 'lucide-react';
 
 export default function App() {
   const [cards, setCards] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState(null);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  const [deepSeekApiKey, setDeepSeekApiKey] = useState(() => localStorage.getItem('deepseek_api_key') || '');
 
   // モーダル制御ステート
   const [isScanOpen, setIsScanOpen] = useState(false);
@@ -21,7 +23,6 @@ export default function App() {
   const [isCallKitOpen, setIsCallKitOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState(null);
 
-  // データ読み込み
   const loadCards = async () => {
     try {
       const data = await getAllCards();
@@ -35,19 +36,18 @@ export default function App() {
     loadCards();
   }, []);
 
-  // APIキーの保存
-  const handleSaveApiKey = (key) => {
-    setApiKey(key);
-    localStorage.setItem('gemini_api_key', key);
+  const handleSaveApiKeys = (geminiKey, deepSeekKey) => {
+    setGeminiApiKey(geminiKey);
+    setDeepSeekApiKey(deepSeekKey);
+    localStorage.setItem('gemini_api_key', geminiKey);
+    localStorage.setItem('deepseek_api_key', deepSeekKey);
   };
 
-  // お気に入りトグル
   const handleToggleFavorite = async (card) => {
     await updateCard(card.id, { ...card, isFavorite: card.isFavorite ? 0 : 1 });
     loadCards();
   };
 
-  // デモ用サンプルデータ作成
   const handleAddSampleData = async () => {
     const samples = [
       {
@@ -86,7 +86,6 @@ export default function App() {
     loadCards();
   };
 
-  // タグ一覧の抽出
   const allTags = useMemo(() => {
     const tagSet = new Set();
     cards.forEach(c => {
@@ -97,16 +96,13 @@ export default function App() {
     return Array.from(tagSet);
   }, [cards]);
 
-  // フィルタリング処理
   const filteredCards = useMemo(() => {
     return cards.filter(card => {
-      // タグフィルター
       if (selectedTag === 'fav' && !card.isFavorite) return false;
       if (selectedTag && selectedTag !== 'fav' && (!card.tags || !card.tags.includes(selectedTag))) {
         return false;
       }
 
-      // 検索クエリ
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       return (
@@ -123,7 +119,6 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* ヘッダー */}
       <Header
         onOpenScan={() => setIsScanOpen(true)}
         onOpenApiKey={() => setIsApiKeyOpen(true)}
@@ -132,7 +127,6 @@ export default function App() {
         cardCount={cards.length}
       />
 
-      {/* CallKit アクティブバナー */}
       <div className="callkit-banner">
         <div className="callkit-info">
           <ShieldCheck size={24} color="#06B6D4" />
@@ -140,6 +134,9 @@ export default function App() {
             <div style={{ fontWeight: '700', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span>CallKit 着信相手識別機能</span>
               <span className="callkit-badge">連絡先アプリ汚染なし</span>
+              <span style={{ fontSize: '0.75rem', background: 'rgba(99, 102, 241, 0.2)', color: '#A5B4FC', padding: '2px 8px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <Cpu size={12} /> Gemini ⇄ DeepSeek 自動切り替え対応
+              </span>
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               登録済み電話番号 ({cards.filter(c => c.phone || c.mobile).length} 件) は標準電話帳に登録せず着信時に名前が表示されます
@@ -153,7 +150,6 @@ export default function App() {
         </button>
       </div>
 
-      {/* サンプルデータ投入案内（カードが0件の場合） */}
       {cards.length === 0 && (
         <div style={{
           padding: '16px 20px',
@@ -175,7 +171,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 名刺リスト */}
       <CardList
         cards={filteredCards}
         searchQuery={searchQuery}
@@ -187,19 +182,20 @@ export default function App() {
         onToggleFavorite={handleToggleFavorite}
       />
 
-      {/* モーダル群 */}
       <ScannerModal
         isOpen={isScanOpen}
         onClose={() => setIsScanOpen(false)}
-        apiKey={apiKey}
+        geminiApiKey={geminiApiKey}
+        deepSeekApiKey={deepSeekApiKey}
         onCardAdded={loadCards}
       />
 
       <ApiKeyModal
         isOpen={isApiKeyOpen}
         onClose={() => setIsApiKeyOpen(false)}
-        apiKey={apiKey}
-        onSaveApiKey={handleSaveApiKey}
+        geminiApiKey={geminiApiKey}
+        deepSeekApiKey={deepSeekApiKey}
+        onSaveApiKeys={handleSaveApiKeys}
       />
 
       <CallKitModal

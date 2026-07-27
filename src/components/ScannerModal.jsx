@@ -1,12 +1,13 @@
 import React, { useState, useRef } from 'react';
-import { X, Camera, Upload, Sparkles, AlertCircle, CheckCircle2, Tag } from 'lucide-react';
-import { analyzeBusinessCard } from '../services/geminiService';
+import { X, Camera, Sparkles, AlertCircle, CheckCircle2, Tag, RefreshCw } from 'lucide-react';
+import { analyzeBusinessCardWithFallback } from '../services/aiService';
 import { addCard } from '../db/db';
 import confetti from 'canvas-confetti';
 
-export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
+export default function ScannerModal({ isOpen, onClose, geminiApiKey, deepSeekApiKey, onCardAdded }) {
   const [selectedImage, setSelectedImage] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [statusNotice, setStatusNotice] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [cardData, setCardData] = useState(null);
   const [newTagInput, setNewTagInput] = useState('');
@@ -15,7 +16,6 @@ export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
 
   if (!isOpen) return null;
 
-  // 画像ファイル読み込み
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -30,18 +30,26 @@ export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
     }
   };
 
-  // AI解析の開始
   const startAiAnalysis = async (base64) => {
-    if (!apiKey) {
-      setErrorMsg('Gemini APIキーが設定されていません。画面上の「APIキー」から入力してください。');
+    if (!geminiApiKey && !deepSeekApiKey) {
+      setErrorMsg('Gemini または DeepSeek の APIキーが設定されていません。「APIキー」設定からキーを入力してください。');
       return;
     }
 
     setIsAnalyzing(true);
+    setStatusNotice('Gemini AI で名刺情報を解析中...');
     setErrorMsg(null);
 
     try {
-      const result = await analyzeBusinessCard(base64, apiKey);
+      const result = await analyzeBusinessCardWithFallback(
+        base64,
+        geminiApiKey,
+        deepSeekApiKey,
+        (fallbackMsg) => {
+          setStatusNotice(fallbackMsg);
+        }
+      );
+
       setCardData({
         name: result.name || '',
         reading: result.reading || '',
@@ -58,13 +66,12 @@ export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
         tags: result.tags || ['新規名刺']
       });
     } catch (err) {
-      setErrorMsg(err.message || 'AI解析に失敗しました。画像を確認して再試行してください。');
+      setErrorMsg(err.message || 'AI解析に失敗しました。画像の鮮明さを確認して再試行してください。');
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  // 名刺の保存
   const handleSaveCard = async () => {
     if (!cardData || !cardData.name) {
       alert('氏名は必須です。');
@@ -77,7 +84,6 @@ export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
         image: selectedImage
       });
 
-      // 祝勝アニメーション
       confetti({
         particleCount: 60,
         spread: 70,
@@ -97,6 +103,7 @@ export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
     setCardData(null);
     setErrorMsg(null);
     setIsAnalyzing(false);
+    setStatusNotice(null);
     onClose();
   };
 
@@ -117,14 +124,13 @@ export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Camera size={22} color="#6366F1" />
-            <h2 className="modal-title">名刺スキャン & AI解析</h2>
+            <h2 className="modal-title">名刺スキャン & AI自動解析 (Gemini / DeepSeek)</h2>
           </div>
           <button className="btn btn-secondary btn-icon" onClick={handleResetAndClose}>
             <X size={18} />
           </button>
         </div>
 
-        {/* ドロップゾーン / カメラ選択 */}
         {!selectedImage && (
           <div className="scan-dropzone" onClick={() => fileInputRef.current?.click()}>
             <input
@@ -152,23 +158,21 @@ export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
               カメラで撮影 / 画像をアップロード
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              タップしてスマホのカメラを起動するか、名刺画像を選択してください
+              名刺を撮影すると、Gemini AI (混雑時は DeepSeek) が自動で情報抽出し登録します
             </p>
           </div>
         )}
 
-        {/* 解析中ローダー */}
         {isAnalyzing && (
           <div style={{ textAlign: 'center', padding: '30px 20px' }}>
             <div className="spinner" style={{ margin: '0 auto 16px', width: '36px', height: '36px' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--accent-secondary)' }}>
               <Sparkles size={20} />
-              <span style={{ fontWeight: '600' }}>Gemini AI が名刺情報を分析中...</span>
+              <span style={{ fontWeight: '600' }}>{statusNotice || 'AI が名刺情報を分析中...'}</span>
             </div>
           </div>
         )}
 
-        {/* エラーメッセージ */}
         {errorMsg && (
           <div style={{
             display: 'flex',
@@ -187,14 +191,13 @@ export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
           </div>
         )}
 
-        {/* スキャン画像プレビュー＆修正フォーム */}
         {selectedImage && cardData && !isAnalyzing && (
           <div>
             <img src={selectedImage} alt="名刺プレビュー" className="scanned-preview-img" />
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10B981', fontSize: '0.85rem', marginBottom: '16px', fontWeight: '600' }}>
               <CheckCircle2 size={18} />
-              <span>AI解析完了！必要に応じて内容を修正・保存してください。</span>
+              <span>AI解析が完了しました！内容を確認・調整してデータベースに保存してください。</span>
             </div>
 
             <div className="form-row">
@@ -283,7 +286,6 @@ export default function ScannerModal({ isOpen, onClose, apiKey, onCardAdded }) {
               />
             </div>
 
-            {/* タグ設定 */}
             <div className="form-group">
               <label className="form-label">タグ</label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
