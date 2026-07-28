@@ -84,9 +84,44 @@ export default function ScannerModalNative({
     }
   };
 
+  // 通常カメラでのフォールバック撮影
+  const launchCameraFallback = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('アクセス権限が必要', '名刺を撮影するにはカメラへのアクセス許可が必要です。');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.9,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const base64Img = result.assets[0].base64?.startsWith('data:image') 
+          ? result.assets[0].base64 
+          : `data:image/jpeg;base64,${result.assets[0].base64}`;
+
+        setSelectedImages([base64Img]);
+        setErrorMsg(null);
+        startBatchAnalysis([base64Img]);
+      }
+    } catch (err) {
+      console.error('Camera fallback error:', err);
+      Alert.alert('エラー', 'カメラの起動に失敗しました。アルバム選択をお試しください。');
+    }
+  };
+
   // OS標準ドキュメントスキャナーの起動
   const launchNativeDocumentScanner = async () => {
     try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('アクセス権限が必要', 'ドキュメントスキャンを行うにはカメラへのアクセス許可が必要です。');
+        return;
+      }
+
       const { scannedImages, status } = await DocumentScanner.scanDocument({
         croppedImageQuality: 90,
         maxNumDocuments: isMultiScan ? 4 : 1,
@@ -109,7 +144,14 @@ export default function ScannerModalNative({
       }
     } catch (err) {
       console.error('Document scanner error:', err);
-      Alert.alert('スキャナー起動エラー', 'ドキュメントスキャナーの起動に失敗しました。ギャラリー選択をお試しください。');
+      Alert.alert(
+        'スキャナー起動エラー',
+        'ドキュメントスキャナーの起動に失敗しました。\n\n通常のカメラで撮影しますか？',
+        [
+          { text: 'アルバム選択', style: 'cancel' },
+          { text: '通常カメラ撮影', onPress: () => launchCameraFallback() }
+        ]
+      );
     }
   };
 
@@ -143,7 +185,7 @@ export default function ScannerModalNative({
 
         if (result.isBusinessCard === false) {
           hasError = true;
-          lastErrorReason = result.reason || '名刺画像を検知できませんでした。4枚以下（2×2配置推奨）にして再度撮影してください。';
+          lastErrorReason = result.reason || '選択された画像から名刺情報を検出できませんでした。名刺がはっきりと写っている画像でお試しください。';
           continue;
         }
 
@@ -172,6 +214,13 @@ export default function ScannerModalNative({
             });
           });
         } else {
+          const hasCoreInfo = result.name || result.company || result.phone || result.mobile || result.email;
+          if (!hasCoreInfo && !result.memo?.includes('ローカルOCR')) {
+            hasError = true;
+            lastErrorReason = '選択された画像から名刺情報を検出できませんでした。名刺がはっきりと写っている画像でお試しください。';
+            continue;
+          }
+
           allCards.push({
             name: result.name || '',
             reading: result.reading || '',
@@ -192,7 +241,7 @@ export default function ScannerModalNative({
       }
 
       if (allCards.length === 0) {
-        setErrorMsg(lastErrorReason || '名刺情報を抽出できませんでした。4枚以下にして再度撮影してください。');
+        setErrorMsg(lastErrorReason || '選択された画像から名刺情報を検出できませんでした。名刺がはっきりと写っている画像でお試しください。');
       } else {
         setExtractedCards(allCards);
         setActiveCardIndex(0);

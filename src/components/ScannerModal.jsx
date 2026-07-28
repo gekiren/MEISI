@@ -106,7 +106,7 @@ export default function ScannerModal({
 
         if (result.isBusinessCard === false) {
           hasError = true;
-          lastErrorReason = result.reason || '名刺画像を検知できませんでした。4枚以下（2×2配置推奨）にして再度撮影してください。';
+          lastErrorReason = result.reason || '選択された画像から名刺情報を検出できませんでした。名刺がはっきりと写っている画像でお試しください。';
           continue;
         }
 
@@ -140,7 +140,7 @@ export default function ScannerModal({
           const hasCoreInfo = result.name || result.company || result.phone || result.mobile || result.email;
           if (!hasCoreInfo && !result.memo?.includes('ローカルOCR')) {
             hasError = true;
-            lastErrorReason = '名刺情報を十分に認識できませんでした。鮮明な画像で再度お試しください。';
+            lastErrorReason = '選択された画像から名刺情報を検出できませんでした。名刺がはっきりと写っている画像でお試しください。';
             continue;
           }
 
@@ -164,7 +164,7 @@ export default function ScannerModal({
       }
 
       if (allCards.length === 0) {
-        setErrorMsg(lastErrorReason || '名刺情報を抽出できませんでした。4枚以下（2×2配置推奨）にして再度撮影してください。');
+        setErrorMsg(lastErrorReason || '選択された画像から名刺情報を検出できませんでした。名刺がはっきりと写っている画像でお試しください。');
       } else {
         setExtractedCards(allCards);
         setActiveCardIndex(0);

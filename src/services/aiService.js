@@ -38,7 +38,7 @@ export async function analyzeBusinessCardWithDeepSeek(
 
   const prompt = `
 名刺画像から情報を抽出してJSONで返却してください。
-画像が名刺ではない場合（キーボード、風景、名刺以外の画像など）は "isBusinessCard": false にしてください。
+画像が名刺ではない場合（エラー画面のスクリーンショット、アプリ画面、キーボード、風景、書籍など）は "isBusinessCard": false, "reason": "名刺画像を検知できませんでした。名刺がはっきりと写っている画像でお試しください。" にしてください。
 名刺の場合は "isBusinessCard": true にしてください。
 ${modeInstruction}${hintPrompt}
 【返却フォーマット】
