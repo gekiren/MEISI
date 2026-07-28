@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { StyleSheet, SafeAreaView, StatusBar } from 'react-native';
+import { StyleSheet, SafeAreaView, StatusBar, PermissionsAndroid, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Updates from 'expo-updates';
 import DocumentScanner, { ResponseType } from 'react-native-document-scanner-plugin';
@@ -19,6 +19,29 @@ export default function App() {
 
       if (data.type === 'START_DOCUMENT_SCANNER') {
         try {
+          if (Platform.OS === 'android') {
+            const hasPermission = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+            if (!hasPermission) {
+              const granted = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.CAMERA,
+                {
+                  title: 'カメラアクセス権限のお願い',
+                  message: '名刺撮影およびドキュメントスキャンのためにカメラへのアクセス許可が必要です。',
+                  buttonNeutral: '後で',
+                  buttonNegative: 'キャンセル',
+                  buttonPositive: '許可',
+                }
+              );
+              if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+                sendMessageToWebView({
+                  type: 'DOCUMENT_SCANNER_ERROR',
+                  error: 'カメラのアクセス権限が許可されていません。スマホの設定アプリでMeisiScanのカメラ権限を許可してください。'
+                });
+                return;
+              }
+            }
+          }
+
           const { scannedImages, status } = await DocumentScanner.scanDocument({
             croppedImageQuality: 90,
             maxNumDocuments: 1,
@@ -40,9 +63,10 @@ export default function App() {
           }
         } catch (err) {
           console.error('Document scanner error:', err);
+          const detailError = err ? `${err.name || 'Error'}: ${err.message || String(err)}${err.code ? ` (Code: ${err.code})` : ''}` : '不明なスキャナーエラー';
           sendMessageToWebView({
             type: 'DOCUMENT_SCANNER_ERROR',
-            error: err.message || 'ドキュメントスキャナーの起動に失敗しました。'
+            error: `【スキャナー起動エラー】\n${detailError}\n\n※Google Play開発者サービスが最新か、スマホの設定でカメラ権限が許可されているか確認してください。`
           });
         }
         return;

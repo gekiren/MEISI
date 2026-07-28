@@ -54,7 +54,7 @@ export default function App() {
             setIsScanOpen(true);
           }
         } else if (data && data.type === 'DOCUMENT_SCANNER_ERROR') {
-          alert(data.error || 'ドキュメントスキャナーの起動に失敗しました。');
+          alert(`${data.error || 'ドキュメントスキャナーの起動に失敗しました。'}\n\n「OK」を押すと通常のカメラ撮影・画像選択ダイアログがご利用いただけます。`);
         }
       } catch (e) {
         // ignore non-json messages
