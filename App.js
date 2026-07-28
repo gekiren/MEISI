@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { StyleSheet, SafeAreaView, StatusBar } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Updates from 'expo-updates';
+import DocumentScanner, { ResponseType } from 'react-native-document-scanner-plugin';
 
 export default function App() {
   const webViewRef = useRef(null);
@@ -15,6 +16,37 @@ export default function App() {
   const handleMessage = async (event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
+
+      if (data.type === 'START_DOCUMENT_SCANNER') {
+        try {
+          const { scannedImages, status } = await DocumentScanner.scanDocument({
+            croppedImageQuality: 90,
+            maxNumDocuments: 1,
+            responseType: ResponseType.Base64,
+          });
+
+          if (status === 'success' && scannedImages && scannedImages.length > 0) {
+            const scannedImage = scannedImages[0];
+            const formattedImage = scannedImage.startsWith('data:image')
+              ? scannedImage
+              : `data:image/jpeg;base64,${scannedImage}`;
+
+            sendMessageToWebView({
+              type: 'DOCUMENT_SCANNER_RESULT',
+              image: formattedImage
+            });
+          } else if (status === 'cancel') {
+            console.log('Document scan cancelled by user');
+          }
+        } catch (err) {
+          console.error('Document scanner error:', err);
+          sendMessageToWebView({
+            type: 'DOCUMENT_SCANNER_ERROR',
+            error: err.message || 'ドキュメントスキャナーの起動に失敗しました。'
+          });
+        }
+        return;
+      }
 
       if (data.type === 'CHECK_OTA_UPDATE') {
         sendMessageToWebView({

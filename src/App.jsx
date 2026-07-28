@@ -53,6 +53,8 @@ export default function App() {
             setScannedImageFromNative(data.image);
             setIsScanOpen(true);
           }
+        } else if (data && data.type === 'DOCUMENT_SCANNER_ERROR') {
+          alert(data.error || 'ドキュメントスキャナーの起動に失敗しました。');
         }
       } catch (e) {
         // ignore non-json messages
