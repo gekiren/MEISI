@@ -22,7 +22,7 @@ export default {
     if (url.pathname === '/api/analyze-card' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const { image } = body;
+        const { image, ocrHintText, scanOptions } = body;
 
         if (!image) {
           return new Response(JSON.stringify({ error: '名刺画像データ (image) が必要です。' }), {
@@ -31,7 +31,7 @@ export default {
           });
         }
 
-        const result = await analyzeCardWithFallback(image, env);
+        const result = await analyzeCardWithFallback(image, env, ocrHintText, scanOptions);
 
         return new Response(JSON.stringify(result), {
           status: 200,
@@ -54,7 +54,7 @@ export default {
   }
 };
 
-async function analyzeCardWithFallback(base64Image, env) {
+async function analyzeCardWithFallback(base64Image, env, ocrHintText = '', scanOptions = {}) {
   const geminiKey = env.GEMINI_API_KEY;
   const deepSeekKey = env.DEEPSEEK_API_KEY;
 
@@ -62,12 +62,12 @@ async function analyzeCardWithFallback(base64Image, env) {
   if (geminiKey) {
     try {
       console.log('Worker: Calling Gemini 3.6 Flash...');
-      return await callGemini36Flash(base64Image, geminiKey);
+      return await callGemini36Flash(base64Image, geminiKey, ocrHintText, scanOptions);
     } catch (geminiError) {
       console.warn('Worker: Gemini 3.6 Flash failed:', geminiError.message);
       if (deepSeekKey) {
         console.log('Worker: Falling back to DeepSeek V4...');
-        return await callDeepSeekV4(base64Image, deepSeekKey);
+        return await callDeepSeekV4(base64Image, deepSeekKey, ocrHintText, scanOptions);
       }
       throw geminiError;
     }
@@ -76,13 +76,13 @@ async function analyzeCardWithFallback(base64Image, env) {
   // 2. Geminiキーがなく DeepSeekキーのみある場合
   if (deepSeekKey) {
     console.log('Worker: Calling DeepSeek V4 directly...');
-    return await callDeepSeekV4(base64Image, deepSeekKey);
+    return await callDeepSeekV4(base64Image, deepSeekKey, ocrHintText, scanOptions);
   }
 
   throw new Error('Cloudflare Worker に API キーが設定されていません。');
 }
 
-async function callGemini36Flash(base64Image, apiKey) {
+async function callGemini36Flash(base64Image, apiKey, ocrHintText = '', scanOptions = {}) {
   let mimeType = 'image/jpeg';
   let cleanBase64 = base64Image;
 
@@ -92,8 +92,20 @@ async function callGemini36Flash(base64Image, apiKey) {
     cleanBase64 = parts[1];
   }
 
+  const hintPrompt = ocrHintText ? `\n【参考：オンデバイスOCR事前抽出テキスト】\n${ocrHintText}\n` : '';
+
+  let modePrompts = [];
+  if (scanOptions.isVertical) {
+    modePrompts.push('※注意【縦書きレイアウト名刺モード】: この名刺は縦書きで記載されています。文字は上から下、行は右から左の縦方向配置と意識して氏名・役職・会社名を特定してください。');
+  }
+  if (scanOptions.isDesignCard) {
+    modePrompts.push('※注意【デザイン・カラー名刺モード】: この名刺はカラフルな背景・複雑なグラフィックノイズ・ロゴマーク・変形フォントが含まれる場合があります。背景ノイズを分離し、本来のテキスト要素を正確に検出してください。');
+  }
+  const modeInstruction = modePrompts.length > 0 ? `\n${modePrompts.join('\n')}\n` : '';
+
   const prompt = `
 あなたは名刺情報の高精度解析AIです。添付された名刺画像から、記載されている情報を正確に抽出して指定のJSONフォーマットで返却してください。
+${modeInstruction}${hintPrompt}
 余計な説明やMarkdown修飾は含めず、純粋なJSONオブジェクトのみを出力してください。
 添付画像が名刺ではない場合（キーボード、風景、書籍、名刺と無関係な写真など）、"isBusinessCard": false にし、各項目は空文字 "" にしてください。
 判別できる名刺の場合は "isBusinessCard": true にしてください。
@@ -144,7 +156,7 @@ async function callGemini36Flash(base64Image, apiKey) {
   return JSON.parse(cleanJson);
 }
 
-async function callDeepSeekV4(base64Image, apiKey) {
+async function callDeepSeekV4(base64Image, apiKey, ocrHintText = '', scanOptions = {}) {
   let mimeType = 'image/jpeg';
   let cleanBase64 = base64Image;
 
@@ -154,10 +166,22 @@ async function callDeepSeekV4(base64Image, apiKey) {
     cleanBase64 = parts[1];
   }
 
+  const hintPrompt = ocrHintText ? `\n【参考：オンデバイスOCR事前抽出テキスト】\n${ocrHintText}\n` : '';
+
+  let modePrompts = [];
+  if (scanOptions.isVertical) {
+    modePrompts.push('※注意【縦書きレイアウト名刺モード】: この名刺は縦書きで記載されています。文字は上から下、行は右から左の縦方向配置と意識して氏名・役職・会社名を特定してください。');
+  }
+  if (scanOptions.isDesignCard) {
+    modePrompts.push('※注意【デザイン・カラー名刺モード】: この名刺はカラフルな背景・複雑なグラフィックノイズ・ロゴマーク・変形フォントが含まれる場合があります。背景ノイズを分離し、本来のテキスト要素を正確に検出してください。');
+  }
+  const modeInstruction = modePrompts.length > 0 ? `\n${modePrompts.join('\n')}\n` : '';
+
   const prompt = `
 名刺画像から情報を抽出してJSONで返却してください。
 画像が名刺ではない場合は "isBusinessCard": false にしてください。
 名刺の場合は "isBusinessCard": true にしてください。
+${modeInstruction}${hintPrompt}
 
 【返却フォーマット】
 {

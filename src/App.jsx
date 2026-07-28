@@ -22,6 +22,7 @@ export default function App() {
   const [isScanOpen, setIsScanOpen] = useState(false);
   const [isCallKitOpen, setIsCallKitOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState(null);
+  const [scannedImageFromNative, setScannedImageFromNative] = useState(null);
 
   const [isCheckingOta, setIsCheckingOta] = useState(false);
   const [otaMessage, setOtaMessage] = useState(null);
@@ -46,6 +47,11 @@ export default function App() {
           setOtaMessage(data.message);
           if (data.status === 'LATEST' || data.status === 'INFO' || data.status === 'ERROR') {
             setTimeout(() => setOtaMessage(null), 4000);
+          }
+        } else if (data && data.type === 'DOCUMENT_SCANNER_RESULT') {
+          if (data.image) {
+            setScannedImageFromNative(data.image);
+            setIsScanOpen(true);
           }
         }
       } catch (e) {
@@ -246,10 +252,14 @@ export default function App() {
 
       <ScannerModal
         isOpen={isScanOpen}
-        onClose={() => setIsScanOpen(false)}
+        onClose={() => {
+          setIsScanOpen(false);
+          setScannedImageFromNative(null);
+        }}
         geminiApiKey={geminiApiKey}
         deepSeekApiKey={deepSeekApiKey}
         workerProxyUrl={workerProxyUrl}
+        scannedImageFromNative={scannedImageFromNative}
         onCardAdded={loadCards}
       />
 

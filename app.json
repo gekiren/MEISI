@@ -22,8 +22,17 @@
       "adaptiveIcon": {
         "backgroundColor": "#0B0F19"
       },
-      "package": "com.gekiren.meisi"
+      "package": "com.gekiren.meisi",
+      "permissions": ["android.permission.CAMERA"]
     },
+    "plugins": [
+      [
+        "react-native-document-scanner-plugin",
+        {
+          "cameraPermission": "名刺撮影およびドキュメントスキャンのためにカメラを使用します。"
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "6bd54667-5b96-4972-a542-a6527965e89a"

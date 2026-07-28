@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
-import { X, Camera, Sparkles, AlertCircle, CheckCircle2, Tag } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, Camera, Sparkles, AlertCircle, CheckCircle2, Tag, ScanLine } from 'lucide-react';
 import { analyzeBusinessCardWithFallback } from '../services/aiService';
+import { isNativeScannerAvailable, scanDocumentWithNativeScanner } from '../services/documentScannerService';
 import { addCard } from '../db/db';
 import confetti from 'canvas-confetti';
 
@@ -10,6 +11,7 @@ export default function ScannerModal({
   geminiApiKey,
   deepSeekApiKey,
   workerProxyUrl,
+  scannedImageFromNative,
   onCardAdded
 }) {
   const [selectedImage, setSelectedImage] = useState(null);
@@ -18,8 +20,20 @@ export default function ScannerModal({
   const [errorMsg, setErrorMsg] = useState(null);
   const [cardData, setCardData] = useState(null);
   const [newTagInput, setNewTagInput] = useState('');
-  
+
+  // スキャンモードオプション
+  const [isVertical, setIsVertical] = useState(false);
+  const [isDesignCard, setIsDesignCard] = useState(false);
+
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen && scannedImageFromNative) {
+      setSelectedImage(scannedImageFromNative);
+      setErrorMsg(null);
+      startAiAnalysis(scannedImageFromNative);
+    }
+  }, [isOpen, scannedImageFromNative]);
 
   if (!isOpen) return null;
 
@@ -42,6 +56,8 @@ export default function ScannerModal({
     setStatusNotice('AI 解析を実行中...');
     setErrorMsg(null);
 
+    const scanOptions = { isVertical, isDesignCard };
+
     try {
       const result = await analyzeBusinessCardWithFallback(
         base64,
@@ -50,13 +66,14 @@ export default function ScannerModal({
         workerProxyUrl,
         (fallbackMsg) => {
           setStatusNotice(fallbackMsg);
-        }
+        },
+        scanOptions
       );
 
       // 名刺判定チェック (isBusinessCard === false または全重要項目が空の場合)
       const hasCoreInfo = result.name || result.company || result.phone || result.mobile || result.email;
-      if (result.isBusinessCard === false || !hasCoreInfo) {
-        setErrorMsg('名刺画像を検知できませんでした。名刺がはっきりと写っている画像で再度お試しください。');
+      if (result.isBusinessCard === false || (!hasCoreInfo && !result.memo?.includes('ローカルOCR'))) {
+        setErrorMsg(result.reason || '名刺画像を検知できませんでした。名刺がはっきりと写っている画像で再度お試しください。');
         setCardData(null);
         return;
       }
@@ -143,35 +160,111 @@ export default function ScannerModal({
         </div>
 
         {!selectedImage && (
-          <div className="scan-dropzone" onClick={() => fileInputRef.current?.click()}>
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              capture="environment"
-              style={{ display: 'none' }}
-              onChange={handleFileChange}
-            />
+          <>
             <div style={{
-              width: '60px',
-              height: '60px',
-              borderRadius: '50%',
-              background: 'var(--accent-gradient)',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px',
-              boxShadow: 'var(--accent-glow)'
+              gap: '12px',
+              marginBottom: '16px',
+              padding: '12px 14px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: 'var(--radius-md)'
             }}>
-              <Camera size={28} color="#fff" />
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                userSelect: 'none',
+                color: isVertical ? 'var(--accent-secondary)' : 'var(--text-color)',
+                fontWeight: isVertical ? '600' : '400'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={isVertical}
+                  onChange={(e) => setIsVertical(e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent-color)', cursor: 'pointer' }}
+                />
+                <span>↕ 縦書き名刺モード</span>
+              </label>
+
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                userSelect: 'none',
+                color: isDesignCard ? '#EC4899' : 'var(--text-color)',
+                fontWeight: isDesignCard ? '600' : '400'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={isDesignCard}
+                  onChange={(e) => setIsDesignCard(e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: '#EC4899', cursor: 'pointer' }}
+                />
+                <span>🎨 デザイン・カラー名刺モード</span>
+              </label>
             </div>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '6px' }}>
-              カメラで撮影 / 画像をアップロード
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              名刺を撮影すると、AI (Gemini 3.6 Flash / DeepSeek V4) が自動で情報抽出します
-            </p>
-          </div>
+
+            {isNativeScannerAvailable() && (
+              <div style={{ marginBottom: '16px' }}>
+                <button
+                  className="btn btn-primary"
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    fontSize: '1rem',
+                    fontWeight: '700',
+                    background: 'linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%)',
+                    boxShadow: '0 4px 14px rgba(6, 182, 212, 0.35)'
+                  }}
+                  onClick={() => scanDocumentWithNativeScanner()}
+                >
+                  <ScanLine size={20} color="#fff" />
+                  <span>OS標準ドキュメントスキャナーで撮影 (背景カット・影消し)</span>
+                </button>
+              </div>
+            )}
+
+            <div className="scan-dropzone" onClick={() => fileInputRef.current?.click()}>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                capture="environment"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+              />
+              <div style={{
+                width: '60px',
+                height: '60px',
+                borderRadius: '50%',
+                background: 'var(--accent-gradient)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                boxShadow: 'var(--accent-glow)'
+              }}>
+                <Camera size={28} color="#fff" />
+              </div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '6px' }}>
+                カメラで撮影 / 画像をアップロード
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                {isVertical || isDesignCard
+                  ? `最適化モード [${[isVertical ? '縦書き' : '', isDesignCard ? 'デザイン名刺' : ''].filter(Boolean).join(' / ')}] 有効中`
+                  : '名刺を撮影すると、AI (Gemini 3.6 Flash / DeepSeek V4) が自動で情報抽出します'}
+              </p>
+            </div>
+          </>
         )}
 
         {isAnalyzing && (

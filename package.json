@@ -19,7 +19,9 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-native": "0.86.0",
-    "react-native-webview": "^14.0.1"
+    "react-native-document-scanner-plugin": "^0.8.0",
+    "react-native-webview": "^14.0.1",
+    "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

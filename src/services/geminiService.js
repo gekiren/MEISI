@@ -3,7 +3,13 @@
  * 最新モデル: gemini-3.6-flash
  */
 
-export async function analyzeBusinessCardWithGemini(base64Image, apiKey, modelName = 'gemini-3.6-flash') {
+export async function analyzeBusinessCardWithGemini(
+  base64Image,
+  apiKey,
+  modelName = 'gemini-3.6-flash',
+  ocrHintText = '',
+  scanOptions = {}
+) {
   if (!apiKey) {
     throw new Error('Gemini APIキーが設定されていません。');
   }
@@ -17,9 +23,20 @@ export async function analyzeBusinessCardWithGemini(base64Image, apiKey, modelNa
     cleanBase64 = parts[1];
   }
 
+  const hintPrompt = ocrHintText ? `\n【参考：オンデバイスOCR事前抽出テキスト】\n${ocrHintText}\n` : '';
+
+  let modePrompts = [];
+  if (scanOptions.isVertical) {
+    modePrompts.push('※注意【縦書きレイアウト名刺モード】: この名刺は縦書きで記載されています。文字は上から下、行は右から左の縦方向配置と意識して氏名・役職・会社名を特定してください。');
+  }
+  if (scanOptions.isDesignCard) {
+    modePrompts.push('※注意【デザイン・カラー名刺モード】: この名刺はカラフルな背景・複雑なグラフィックノイズ・ロゴマーク・変形フォントが含まれる場合があります。背景ノイズを分離し、本来のテキスト要素を正確に検出してください。');
+  }
+  const modeInstruction = modePrompts.length > 0 ? `\n${modePrompts.join('\n')}\n` : '';
+
   const prompt = `
 あなたは名刺情報の高精度解析AIです。添付された名刺画像から、記載されている情報を正確に抽出して指定のJSONフォーマットで返却してください。
-
+${modeInstruction}${hintPrompt}
 【出力ルール】
 - 余計な説明、Markdown修飾 (例: \`\`\`json) は含めず、純粋なJSONオブジェクトのみを出力してください。
 - 添付画像が名刺ではない場合（キーボード、風景、書籍、名刺と無関係な写真など）、"isBusinessCard": false にし、各項目は空文字 "" にしてください。
