@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "MeisiScan",
+    "slug": "meisi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0F19"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6bd54667-5b96-4972-a542-a6527965e89a",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": "1.0.0",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gekiren.meisi"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0F19"
+      },
+      "package": "com.gekiren.meisi"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6bd54667-5b96-4972-a542-a6527965e89a"
+      }
+    }
+  }
+}

@@ -22,11 +22,13 @@ export async function analyzeBusinessCardWithGemini(base64Image, apiKey, modelNa
 
 【出力ルール】
 - 余計な説明、Markdown修飾 (例: \`\`\`json) は含めず、純粋なJSONオブジェクトのみを出力してください。
-- 各フィールドが判別できない場合は空文字 "" にしてください。
+- 添付画像が名刺ではない場合（キーボード、風景、書籍、名刺と無関係な写真など）、"isBusinessCard": false にし、各項目は空文字 "" にしてください。
+- 判別できる名刺の場合は "isBusinessCard": true にしてください。
 - 電話番号はハイフンを含める標準フォーマット（例: 03-1234-5678, 090-1234-5678）に補正してください。
 
 【返却するJSONフォーマット】
 {
+  "isBusinessCard": trueまたはfalse,
   "name": "氏名（漢字）",
   "reading": "氏名（フリガナ・ひらがな）",
   "company": "会社名・組織名",

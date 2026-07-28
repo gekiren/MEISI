@@ -38,11 +38,6 @@ export default function ScannerModal({
   };
 
   const startAiAnalysis = async (base64) => {
-    if (!workerProxyUrl && !geminiApiKey && !deepSeekApiKey) {
-      setErrorMsg('Cloudflare Worker プロキシ URL または APIキーが設定されていません。「APIキー」設定から入力してください。');
-      return;
-    }
-
     setIsAnalyzing(true);
     setStatusNotice('AI 解析を実行中...');
     setErrorMsg(null);
@@ -57,6 +52,14 @@ export default function ScannerModal({
           setStatusNotice(fallbackMsg);
         }
       );
+
+      // 名刺判定チェック (isBusinessCard === false または全重要項目が空の場合)
+      const hasCoreInfo = result.name || result.company || result.phone || result.mobile || result.email;
+      if (result.isBusinessCard === false || !hasCoreInfo) {
+        setErrorMsg('名刺画像を検知できませんでした。名刺がはっきりと写っている画像で再度お試しください。');
+        setCardData(null);
+        return;
+      }
 
       setCardData({
         name: result.name || '',

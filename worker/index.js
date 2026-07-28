@@ -95,10 +95,12 @@ async function callGemini36Flash(base64Image, apiKey) {
   const prompt = `
 あなたは名刺情報の高精度解析AIです。添付された名刺画像から、記載されている情報を正確に抽出して指定のJSONフォーマットで返却してください。
 余計な説明やMarkdown修飾は含めず、純粋なJSONオブジェクトのみを出力してください。
-判別できない項目は空文字 "" にしてください。
+添付画像が名刺ではない場合（キーボード、風景、書籍、名刺と無関係な写真など）、"isBusinessCard": false にし、各項目は空文字 "" にしてください。
+判別できる名刺の場合は "isBusinessCard": true にしてください。
 
 【返却フォーマット】
 {
+  "isBusinessCard": true,
   "name": "氏名",
   "reading": "フリガナ",
   "company": "会社名",
@@ -154,8 +156,12 @@ async function callDeepSeekV4(base64Image, apiKey) {
 
   const prompt = `
 名刺画像から情報を抽出してJSONで返却してください。
+画像が名刺ではない場合は "isBusinessCard": false にしてください。
+名刺の場合は "isBusinessCard": true にしてください。
+
 【返却フォーマット】
 {
+  "isBusinessCard": true,
   "name": "氏名",
   "reading": "フリガナ",
   "company": "会社名",

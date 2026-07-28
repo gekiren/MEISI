@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Header from './components/Header';
 import CardList from './components/CardList';
 import ScannerModal from './components/ScannerModal';
-import ApiKeyModal from './components/ApiKeyModal';
 import CallKitModal from './components/CallKitModal';
 import CardDetailModal from './components/CardDetailModal';
 import { getAllCards, updateCard, addCard } from './db/db';
@@ -21,9 +20,11 @@ export default function App() {
 
   // モーダル制御ステート
   const [isScanOpen, setIsScanOpen] = useState(false);
-  const [isApiKeyOpen, setIsApiKeyOpen] = useState(false);
   const [isCallKitOpen, setIsCallKitOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState(null);
+
+  const [isCheckingOta, setIsCheckingOta] = useState(false);
+  const [otaMessage, setOtaMessage] = useState(null);
 
   const loadCards = async () => {
     try {
@@ -36,7 +37,45 @@ export default function App() {
 
   useEffect(() => {
     loadCards();
+
+    const handleNativeMessage = (event) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (data && data.type === 'OTA_STATUS') {
+          setIsCheckingOta(data.status === 'CHECKING' || data.status === 'DOWNLOADING');
+          setOtaMessage(data.message);
+          if (data.status === 'LATEST' || data.status === 'INFO' || data.status === 'ERROR') {
+            setTimeout(() => setOtaMessage(null), 4000);
+          }
+        }
+      } catch (e) {
+        // ignore non-json messages
+      }
+    };
+
+    window.addEventListener('message', handleNativeMessage);
+    document.addEventListener('message', handleNativeMessage);
+
+    return () => {
+      window.removeEventListener('message', handleNativeMessage);
+      document.removeEventListener('message', handleNativeMessage);
+    };
   }, []);
+
+  const handleCheckOta = () => {
+    setIsCheckingOta(true);
+    setOtaMessage('OTAアップデートを確認しています...');
+
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'CHECK_OTA_UPDATE' }));
+    } else {
+      setTimeout(() => {
+        setIsCheckingOta(false);
+        setOtaMessage('Webブラウザ環境です。ネイティブアプリ(APK)実機でのみOTA更新が実行されます。');
+        setTimeout(() => setOtaMessage(null), 4000);
+      }, 1000);
+    }
+  };
 
   const handleSaveApiKeys = (geminiKey, deepSeekKey, proxyUrl) => {
     setGeminiApiKey(geminiKey);
@@ -125,30 +164,49 @@ export default function App() {
     <div className="app-container">
       <Header
         onOpenScan={() => setIsScanOpen(true)}
-        onOpenApiKey={() => setIsApiKeyOpen(true)}
         onOpenCallKit={() => setIsCallKitOpen(true)}
         onExportCSV={() => exportCardsToCSV(cards)}
+        onCheckOta={handleCheckOta}
+        isCheckingOta={isCheckingOta}
         cardCount={cards.length}
       />
 
+      {otaMessage && (
+        <div style={{
+          padding: '12px 18px',
+          background: 'rgba(16, 185, 129, 0.15)',
+          border: '1px solid #10B981',
+          borderRadius: 'var(--radius-md)',
+          marginBottom: '16px',
+          color: '#D1FAE5',
+          fontSize: '0.9rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px'
+        }}>
+          <Sparkles size={18} color="#10B981" />
+          <span>{otaMessage}</span>
+        </div>
+      )}
+
       <div className="callkit-banner">
         <div className="callkit-info">
-          <ShieldCheck size={24} color="#06B6D4" />
-          <div>
-            <div style={{ fontWeight: '700', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>CallKit 着信相手識別機能</span>
+          <div className="callkit-header">
+            <ShieldCheck size={22} color="#06B6D4" className="callkit-icon" />
+            <span className="callkit-title">CallKit 着信相手識別機能</span>
+            <div className="callkit-badges">
               <span className="callkit-badge">連絡先アプリ汚染なし</span>
-              <span style={{ fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.2)', color: '#6EE7B7', padding: '2px 8px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <span className="callkit-badge-proxy">
                 <Server size={12} /> AI解析プロキシ組み込み済み (Gemini 3.6 Flash ⇄ DeepSeek V4)
               </span>
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              登録済み電話番号 ({cards.filter(c => c.phone || c.mobile).length} 件) は標準電話帳に登録せず着信時に名前が表示されます
-            </div>
+          </div>
+          <div className="callkit-desc">
+            登録済み電話番号 ({cards.filter(c => c.phone || c.mobile).length} 件) は標準電話帳に登録せず着信時に名前が表示されます
           </div>
         </div>
 
-        <button className="btn btn-secondary btn-sm" onClick={() => setIsCallKitOpen(true)}>
+        <button className="btn btn-secondary btn-sm callkit-action-btn" onClick={() => setIsCallKitOpen(true)}>
           <PhoneIncoming size={14} color="#06B6D4" />
           <span>CallKit 設定</span>
         </button>
@@ -193,15 +251,6 @@ export default function App() {
         deepSeekApiKey={deepSeekApiKey}
         workerProxyUrl={workerProxyUrl}
         onCardAdded={loadCards}
-      />
-
-      <ApiKeyModal
-        isOpen={isApiKeyOpen}
-        onClose={() => setIsApiKeyOpen(false)}
-        geminiApiKey={geminiApiKey}
-        deepSeekApiKey={deepSeekApiKey}
-        workerProxyUrl={workerProxyUrl}
-        onSaveApiKeys={handleSaveApiKeys}
       />
 
       <CallKitModal
