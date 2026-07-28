@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Camera, Sparkles, AlertCircle, CheckCircle2, Tag, ScanLine } from 'lucide-react';
+import { X, Camera, Sparkles, AlertCircle, CheckCircle2, Tag, ScanLine, Image } from 'lucide-react';
 import { analyzeBusinessCardWithFallback } from '../services/aiService';
 import { isNativeScannerAvailable, scanDocumentWithNativeScanner } from '../services/documentScannerService';
 import { addCard } from '../db/db';
@@ -238,7 +238,6 @@ export default function ScannerModal({
                 type="file"
                 ref={fileInputRef}
                 accept="image/*"
-                capture="environment"
                 style={{ display: 'none' }}
                 onChange={handleFileChange}
               />
@@ -253,15 +252,15 @@ export default function ScannerModal({
                 margin: '0 auto 16px',
                 boxShadow: 'var(--accent-glow)'
               }}>
-                <Camera size={28} color="#fff" />
+                <Image size={28} color="#fff" />
               </div>
               <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '6px' }}>
-                カメラで撮影 / 画像をアップロード
+                アルバムから名刺画像を選択 / アップロード
               </h3>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                 {isVertical || isDesignCard
                   ? `最適化モード [${[isVertical ? '縦書き' : '', isDesignCard ? 'デザイン名刺' : ''].filter(Boolean).join(' / ')}] 有効中`
-                  : '名刺を撮影すると、AI (Gemini 3.6 Flash / DeepSeek V4) が自動で情報抽出します'}
+                  : '端末に保存された名刺画像を選択すると、AI が自動で情報抽出します'}
               </p>
             </div>
           </>
