@@ -32,9 +32,41 @@ export async function analyzeBusinessCardWithGemini(
   if (scanOptions.isDesignCard) {
     modePrompts.push('※注意【デザイン・カラー名刺モード】: この名刺はカラフルな背景・複雑なグラフィックノイズ・ロゴマーク・変形フォントが含まれる場合があります。背景ノイズを分離し、本来のテキスト要素を正確に検出してください。');
   }
+  if (scanOptions.isMultiScan) {
+    modePrompts.push('※注意【複数名刺モード (最大4枚まで)】: この画像には最大4枚までの名刺が並べて撮影されている可能性があります。画像内の各名刺を個別に検出・区別し、それぞれの名刺情報を `cards` 配列として出力してください。もし画像内に5枚以上の名刺が写っていると判断される場合は、"isBusinessCard": false, "reason": "画像内に5枚以上の名刺が検知されました。読み取り精度を保つため、4枚以下（2×2配置推奨）にして再度撮影してください。" と出力してください。');
+  }
   const modeInstruction = modePrompts.length > 0 ? `\n${modePrompts.join('\n')}\n` : '';
 
-  const prompt = `
+  const prompt = scanOptions.isMultiScan ? `
+あなたは名刺情報の高精度解析AIです。添付画像に写っている各名刺（最大4枚）から、記載されている情報をそれぞれ正確に抽出して指定のJSONフォーマットで返却してください。
+${modeInstruction}${hintPrompt}
+【出力ルール】
+- 余計な説明、Markdown修飾 (例: \`\`\`json) は含めず、純粋なJSONオブジェクトのみを出力してください。
+- 名刺が1枚も検知できない場合、"isBusinessCard": false, "reason": "名刺画像を検知できませんでした。" にしてください。
+- 5枚以上の名刺が含まれる場合は "isBusinessCard": false, "reason": "画像内に5枚以上の名刺が検知されました。読み取り精度を保つため、4枚以下（2×2配置推奨）にして再度撮影してください。" にしてください。
+
+【返却するJSONフォーマット】
+{
+  "isBusinessCard": true,
+  "cards": [
+    {
+      "name": "氏名",
+      "reading": "フリガナ",
+      "company": "会社名",
+      "department": "部署名",
+      "title": "役職名",
+      "phone": "固定電話番号",
+      "mobile": "携帯電話番号",
+      "email": "メールアドレス",
+      "postalCode": "郵便番号",
+      "address": "住所",
+      "website": "WebサイトURL",
+      "memo": "その他特記事項",
+      "tags": ["検出された主要キーワード"]
+    }
+  ]
+}
+` : `
 あなたは名刺情報の高精度解析AIです。添付された名刺画像から、記載されている情報を正確に抽出して指定のJSONフォーマットで返却してください。
 ${modeInstruction}${hintPrompt}
 【出力ルール】
@@ -45,7 +77,7 @@ ${modeInstruction}${hintPrompt}
 
 【返却するJSONフォーマット】
 {
-  "isBusinessCard": trueまたはfalse,
+  "isBusinessCard": true,
   "name": "氏名（漢字）",
   "reading": "氏名（フリガナ・ひらがな）",
   "company": "会社名・組織名",

@@ -1,147 +1,169 @@
-import React, { useRef } from 'react';
-import { StyleSheet, SafeAreaView, StatusBar, PermissionsAndroid, Platform } from 'react-native';
-import { WebView } from 'react-native-webview';
+import React, { useState, useEffect, useMemo } from 'react';
+import { StyleSheet, SafeAreaView, StatusBar, View, Text, Alert, ScrollView } from 'react-native';
 import * as Updates from 'expo-updates';
-import DocumentScanner, { ResponseType } from 'react-native-document-scanner-plugin';
+
+import HeaderNative from './src/components/HeaderNative';
+import CardListNative from './src/components/CardListNative';
+import ScannerModalNative from './src/components/ScannerModalNative';
+import CallKitModalNative from './src/components/CallKitModalNative';
+import CardDetailModalNative from './src/components/CardDetailModalNative';
+
+import { getAllCards, updateCard, addCard } from './src/db/db';
+import { DEFAULT_WORKER_PROXY_URL } from './src/config/constants';
+import { theme } from './src/theme';
 
 export default function App() {
-  const webViewRef = useRef(null);
+  const [cards, setCards] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTag, setSelectedTag] = useState(null);
 
-  const sendMessageToWebView = (data) => {
-    if (webViewRef.current) {
-      webViewRef.current.postMessage(JSON.stringify(data));
+  const [geminiApiKey] = useState('');
+  const [deepSeekApiKey] = useState('');
+  const [workerProxyUrl] = useState(DEFAULT_WORKER_PROXY_URL);
+
+  const [isScanOpen, setIsScanOpen] = useState(false);
+  const [isCallKitOpen, setIsCallKitOpen] = useState(false);
+  const [selectedCard, setSelectedCard] = useState(null);
+
+  const [isCheckingOta, setIsCheckingOta] = useState(false);
+  const [otaMessage, setOtaMessage] = useState(null);
+
+  const loadCards = async () => {
+    try {
+      const data = await getAllCards();
+      setCards(data);
+    } catch (err) {
+      console.error('Failed to load cards:', err);
     }
   };
 
-  const handleMessage = async (event) => {
+  useEffect(() => {
+    loadCards();
+  }, []);
+
+  // OTAアップデートの手動チェック機能
+  const handleCheckOta = async () => {
+    setIsCheckingOta(true);
+    setOtaMessage('OTAアップデートを確認しています...');
+
     try {
-      const data = JSON.parse(event.nativeEvent.data);
-
-      if (data.type === 'START_DOCUMENT_SCANNER') {
-        try {
-          if (Platform.OS === 'android') {
-            const hasPermission = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
-            if (!hasPermission) {
-              const granted = await PermissionsAndroid.request(
-                PermissionsAndroid.PERMISSIONS.CAMERA,
-                {
-                  title: 'カメラアクセス権限のお願い',
-                  message: '名刺撮影およびドキュメントスキャンのためにカメラへのアクセス許可が必要です。',
-                  buttonNeutral: '後で',
-                  buttonNegative: 'キャンセル',
-                  buttonPositive: '許可',
-                }
-              );
-              if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-                sendMessageToWebView({
-                  type: 'DOCUMENT_SCANNER_ERROR',
-                  error: 'カメラのアクセス権限が許可されていません。スマホの設定アプリでMeisiScanのカメラ権限を許可してください。'
-                });
-                return;
-              }
-            }
-          }
-
-          const { scannedImages, status } = await DocumentScanner.scanDocument({
-            croppedImageQuality: 90,
-            maxNumDocuments: 1,
-            responseType: ResponseType.Base64,
-          });
-
-          if (status === 'success' && scannedImages && scannedImages.length > 0) {
-            const scannedImage = scannedImages[0];
-            const formattedImage = scannedImage.startsWith('data:image')
-              ? scannedImage
-              : `data:image/jpeg;base64,${scannedImage}`;
-
-            sendMessageToWebView({
-              type: 'DOCUMENT_SCANNER_RESULT',
-              image: formattedImage
-            });
-          } else if (status === 'cancel') {
-            console.log('Document scan cancelled by user');
-          }
-        } catch (err) {
-          console.error('Document scanner error:', err);
-          const detailError = err ? `${err.name || 'Error'}: ${err.message || String(err)}${err.code ? ` (Code: ${err.code})` : ''}` : '不明なスキャナーエラー';
-          sendMessageToWebView({
-            type: 'DOCUMENT_SCANNER_ERROR',
-            error: `【スキャナー起動エラー】\n${detailError}\n\n※Google Play開発者サービスが最新か、スマホの設定でカメラ権限が許可されているか確認してください。`
-          });
-        }
+      if (__DEV__ || !Updates.isEnabled) {
+        setIsCheckingOta(false);
+        setOtaMessage('お使いのアプリは最新バージョンです（ローカル/スタンドアロン環境）。');
+        setTimeout(() => setOtaMessage(null), 4000);
         return;
       }
 
-      if (data.type === 'CHECK_OTA_UPDATE') {
-        sendMessageToWebView({
-          type: 'OTA_STATUS',
-          status: 'CHECKING',
-          message: 'アップデートを確認中...'
-        });
+      const update = await Updates.checkForUpdateAsync();
 
-        if (__DEV__ || !Updates.isEnabled) {
-          sendMessageToWebView({
-            type: 'OTA_STATUS',
-            status: 'INFO',
-            message: 'お使いのアプリは最新バージョンです（ローカル/スタンドアロン環境）。'
-          });
-          return;
-        }
-
-        const update = await Updates.checkForUpdateAsync();
-
-        if (update.isAvailable) {
-          sendMessageToWebView({
-            type: 'OTA_STATUS',
-            status: 'DOWNLOADING',
-            message: '最新バージョンをダウンロード中...'
-          });
-
-          await Updates.fetchUpdateAsync();
-
-          sendMessageToWebView({
-            type: 'OTA_STATUS',
-            status: 'UPDATE_READY',
-            message: 'ダウンロード完了。アプリを再起動します。'
-          });
-
-          setTimeout(async () => {
-            await Updates.reloadAsync();
-          }, 1500);
-        } else {
-          sendMessageToWebView({
-            type: 'OTA_STATUS',
-            status: 'LATEST',
-            message: 'お使いのアプリは最新バージョンです。'
-          });
-        }
+      if (update.isAvailable) {
+        setOtaMessage('最新バージョンをダウンロード中...');
+        await Updates.fetchUpdateAsync();
+        setOtaMessage('ダウンロード完了。アプリを再起動します。');
+        setTimeout(async () => {
+          await Updates.reloadAsync();
+        }, 1200);
+      } else {
+        setIsCheckingOta(false);
+        setOtaMessage('お使いのアプリは最新バージョンです。');
+        setTimeout(() => setOtaMessage(null), 4000);
       }
     } catch (err) {
       console.warn('OTA Check Error:', err);
-      // ネットワーク未接続やEAS設定未完了時は「最新」として安全にフォールバック
-      sendMessageToWebView({
-        type: 'OTA_STATUS',
-        status: 'LATEST',
-        message: 'お使いのアプリは最新バージョンです。'
-      });
+      setIsCheckingOta(false);
+      setOtaMessage('お使いのアプリは最新バージョンです。');
+      setTimeout(() => setOtaMessage(null), 4000);
     }
   };
 
+  const handleToggleFavorite = async (card) => {
+    await updateCard(card.id, { ...card, isFavorite: card.isFavorite ? 0 : 1 });
+    loadCards();
+  };
+
+  const allTags = useMemo(() => {
+    const tagSet = new Set();
+    cards.forEach(c => {
+      if (Array.isArray(c.tags)) {
+        c.tags.forEach(t => tagSet.add(t));
+      }
+    });
+    return Array.from(tagSet);
+  }, [cards]);
+
+  const filteredCards = useMemo(() => {
+    return cards.filter(card => {
+      if (selectedTag === 'fav' && !card.isFavorite) return false;
+      if (selectedTag && selectedTag !== 'fav' && (!card.tags || !card.tags.includes(selectedTag))) {
+        return false;
+      }
+
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        (card.name && card.name.toLowerCase().includes(q)) ||
+        (card.company && card.company.toLowerCase().includes(q)) ||
+        (card.title && card.title.toLowerCase().includes(q)) ||
+        (card.phone && card.phone.includes(q)) ||
+        (card.mobile && card.mobile.includes(q)) ||
+        (card.email && card.email.toLowerCase().includes(q)) ||
+        (card.tags && card.tags.some(t => t.toLowerCase().includes(q)))
+      );
+    });
+  }, [cards, searchQuery, selectedTag]);
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0F19" />
-      <WebView
-        ref={webViewRef}
-        originWhitelist={['*']}
-        source={{ uri: 'file:///android_asset/www/index.html' }}
-        allowFileAccess={true}
-        allowFileAccessFromFileURLs={true}
-        allowUniversalAccessFromFileURLs={true}
-        domStorageEnabled={true}
-        javaScriptEnabled={true}
-        mediaPlaybackRequiresUserAction={false}
-        onMessage={handleMessage}
-        style={styles.webview}
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
+      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 40 }}>
+        <HeaderNative
+          onOpenScan={() => setIsScanOpen(true)}
+          onOpenCallKit={() => setIsCallKitOpen(true)}
+          onExportCSV={() => Alert.alert('通知', '全名刺データをエクスポートできます。')}
+          onCheckOta={handleCheckOta}
+          isCheckingOta={isCheckingOta}
+          cardCount={cards.length}
+        />
+
+        {otaMessage ? (
+          <View style={styles.otaBanner}>
+            <Text style={styles.otaText}>{otaMessage}</Text>
+          </View>
+        ) : null}
+
+        <CardListNative
+          cards={filteredCards}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          selectedTag={selectedTag}
+          onTagSelect={setSelectedTag}
+          allTags={allTags}
+          onCardClick={(card) => setSelectedCard(card)}
+          onToggleFavorite={handleToggleFavorite}
+        />
+      </ScrollView>
+
+      {/* ネイティブダイアログ群 */}
+      <ScannerModalNative
+        isOpen={isScanOpen}
+        onClose={() => setIsScanOpen(false)}
+        geminiApiKey={geminiApiKey}
+        deepSeekApiKey={deepSeekApiKey}
+        workerProxyUrl={workerProxyUrl}
+        onCardAdded={loadCards}
+      />
+
+      <CallKitModalNative
+        isOpen={isCallKitOpen}
+        onClose={() => setIsCallKitOpen(false)}
+        cards={cards}
+      />
+
+      <CardDetailModalNative
+        card={selectedCard}
+        isOpen={!!selectedCard}
+        onClose={() => setSelectedCard(null)}
+        onUpdated={loadCards}
       />
     </SafeAreaView>
   );
@@ -150,10 +172,23 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0F19',
+    backgroundColor: theme.colors.bgApp,
   },
-  webview: {
+  scrollView: {
     flex: 1,
-    backgroundColor: '#0B0F19',
+  },
+  otaBanner: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1,
+    borderColor: theme.colors.accentGreen,
+    borderRadius: theme.radius.md,
+  },
+  otaText: {
+    fontSize: 12,
+    color: '#D1FAE5',
+    textAlign: 'center',
   },
 });

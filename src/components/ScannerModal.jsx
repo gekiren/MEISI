@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Camera, Sparkles, AlertCircle, CheckCircle2, Tag, ScanLine, Image } from 'lucide-react';
+import { X, Camera, Sparkles, AlertCircle, CheckCircle2, Tag, ScanLine, Image, Grid, Layers } from 'lucide-react';
 import { analyzeBusinessCardWithFallback } from '../services/aiService';
 import { isNativeScannerAvailable, scanDocumentWithNativeScanner } from '../services/documentScannerService';
 import { addCard } from '../db/db';
@@ -12,87 +12,166 @@ export default function ScannerModal({
   deepSeekApiKey,
   workerProxyUrl,
   scannedImageFromNative,
+  scannedImagesFromNative,
   onCardAdded
 }) {
-  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImages, setSelectedImages] = useState([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [statusNotice, setStatusNotice] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [cardData, setCardData] = useState(null);
+  
+  // 抽出された名刺データ一覧 (複数枚対応)
+  const [extractedCards, setExtractedCards] = useState([]);
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [newTagInput, setNewTagInput] = useState('');
 
   // スキャンモードオプション
+  const [isMultiScan, setIsMultiScan] = useState(false);
   const [isVertical, setIsVertical] = useState(false);
   const [isDesignCard, setIsDesignCard] = useState(false);
 
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    if (isOpen && scannedImageFromNative) {
-      setSelectedImage(scannedImageFromNative);
-      setErrorMsg(null);
-      startAiAnalysis(scannedImageFromNative);
+    if (isOpen) {
+      if (scannedImagesFromNative && scannedImagesFromNative.length > 0) {
+        if (scannedImagesFromNative.length >= 5) {
+          alert('一度にスキャンできる名刺は最大4枚までです。4枚以下で撮影してください。');
+          return;
+        }
+        setSelectedImages(scannedImagesFromNative);
+        setErrorMsg(null);
+        startBatchAnalysis(scannedImagesFromNative);
+      } else if (scannedImageFromNative) {
+        setSelectedImages([scannedImageFromNative]);
+        setErrorMsg(null);
+        startBatchAnalysis([scannedImageFromNative]);
+      }
     }
-  }, [isOpen, scannedImageFromNative]);
+  }, [isOpen, scannedImageFromNative, scannedImagesFromNative]);
 
   if (!isOpen) return null;
 
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const base64 = evt.target.result;
-        setSelectedImage(base64);
-        setErrorMsg(null);
-        startAiAnalysis(base64);
-      };
-      reader.readAsDataURL(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    if (files.length >= 5) {
+      alert('一度にスキャンできる名刺は最大4枚までです。4枚以下を選択してください。');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
     }
+
+    const readers = files.map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (evt) => resolve(evt.target.result);
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(readers).then(base64List => {
+      setSelectedImages(base64List);
+      setErrorMsg(null);
+      startBatchAnalysis(base64List);
+    });
   };
 
-  const startAiAnalysis = async (base64) => {
+  const startBatchAnalysis = async (imagesList) => {
     setIsAnalyzing(true);
     setStatusNotice('AI 解析を実行中...');
     setErrorMsg(null);
+    setExtractedCards([]);
 
-    const scanOptions = { isVertical, isDesignCard };
+    const scanOptions = { isVertical, isDesignCard, isMultiScan };
+    const allCards = [];
+    let hasError = false;
+    let lastErrorReason = null;
 
     try {
-      const result = await analyzeBusinessCardWithFallback(
-        base64,
-        geminiApiKey,
-        deepSeekApiKey,
-        workerProxyUrl,
-        (fallbackMsg) => {
-          setStatusNotice(fallbackMsg);
-        },
-        scanOptions
-      );
+      for (let i = 0; i < imagesList.length; i++) {
+        const img = imagesList[i];
+        if (imagesList.length > 1) {
+          setStatusNotice(`AI 解析中 (${i + 1} / ${imagesList.length} 枚目)...`);
+        }
 
-      // 名刺判定チェック (isBusinessCard === false または全重要項目が空の場合)
-      const hasCoreInfo = result.name || result.company || result.phone || result.mobile || result.email;
-      if (result.isBusinessCard === false || (!hasCoreInfo && !result.memo?.includes('ローカルOCR'))) {
-        setErrorMsg(result.reason || '名刺画像を検知できませんでした。名刺がはっきりと写っている画像で再度お試しください。');
-        setCardData(null);
-        return;
+        const result = await analyzeBusinessCardWithFallback(
+          img,
+          geminiApiKey,
+          deepSeekApiKey,
+          workerProxyUrl,
+          (fallbackMsg) => setStatusNotice(fallbackMsg),
+          scanOptions
+        );
+
+        if (result.isBusinessCard === false) {
+          hasError = true;
+          lastErrorReason = result.reason || '名刺画像を検知できませんでした。4枚以下（2×2配置推奨）にして再度撮影してください。';
+          continue;
+        }
+
+        // 1つの画像に複数名刺 (cards: [...]) が含まれる場合
+        if (Array.isArray(result.cards) && result.cards.length > 0) {
+          if (result.cards.length >= 5) {
+            hasError = true;
+            lastErrorReason = '画像内に5枚以上の名刺が検知されました。読み取り精度を保つため、4枚以下（2×2配置推奨）にして再度撮影してください。';
+            continue;
+          }
+          result.cards.forEach((c) => {
+            allCards.push({
+              name: c.name || '',
+              reading: c.reading || '',
+              company: c.company || '',
+              department: c.department || '',
+              title: c.title || '',
+              phone: c.phone || '',
+              mobile: c.mobile || '',
+              email: c.email || '',
+              postalCode: c.postalCode || '',
+              address: c.address || '',
+              website: c.website || '',
+              memo: c.memo || '',
+              tags: c.tags || ['新規名刺'],
+              image: img
+            });
+          });
+        } else {
+          // 単一カードの場合
+          const hasCoreInfo = result.name || result.company || result.phone || result.mobile || result.email;
+          if (!hasCoreInfo && !result.memo?.includes('ローカルOCR')) {
+            hasError = true;
+            lastErrorReason = '名刺情報を十分に認識できませんでした。鮮明な画像で再度お試しください。';
+            continue;
+          }
+
+          allCards.push({
+            name: result.name || '',
+            reading: result.reading || '',
+            company: result.company || '',
+            department: result.department || '',
+            title: result.title || '',
+            phone: result.phone || '',
+            mobile: result.mobile || '',
+            email: result.email || '',
+            postalCode: result.postalCode || '',
+            address: result.address || '',
+            website: result.website || '',
+            memo: result.memo || '',
+            tags: result.tags || ['新規名刺'],
+            image: img
+          });
+        }
       }
 
-      setCardData({
-        name: result.name || '',
-        reading: result.reading || '',
-        company: result.company || '',
-        department: result.department || '',
-        title: result.title || '',
-        phone: result.phone || '',
-        mobile: result.mobile || '',
-        email: result.email || '',
-        postalCode: result.postalCode || '',
-        address: result.address || '',
-        website: result.website || '',
-        memo: result.memo || '',
-        tags: result.tags || ['新規名刺']
-      });
+      if (allCards.length === 0) {
+        setErrorMsg(lastErrorReason || '名刺情報を抽出できませんでした。4枚以下（2×2配置推奨）にして再度撮影してください。');
+      } else {
+        setExtractedCards(allCards);
+        setActiveCardIndex(0);
+        if (hasError && lastErrorReason) {
+          setErrorMsg(`一部の画像でエラーが発生しました: ${lastErrorReason}`);
+        }
+      }
     } catch (err) {
       setErrorMsg(err.message || 'AI解析に失敗しました。画像の鮮明さを確認して再試行してください。');
     } finally {
@@ -100,72 +179,164 @@ export default function ScannerModal({
     }
   };
 
-  const handleSaveCard = async () => {
-    if (!cardData || !cardData.name) {
-      alert('氏名は必須です。');
-      return;
+  const handleSaveAllCards = async () => {
+    if (extractedCards.length === 0) return;
+
+    for (let i = 0; i < extractedCards.length; i++) {
+      if (!extractedCards[i].name) {
+        alert(`名刺 #${i + 1} の氏名が入力されていません。`);
+        setActiveCardIndex(i);
+        return;
+      }
     }
 
     try {
-      await addCard({
-        ...cardData,
-        image: selectedImage
-      });
+      for (const card of extractedCards) {
+        await addCard(card);
+      }
 
       confetti({
-        particleCount: 60,
-        spread: 70,
+        particleCount: 80,
+        spread: 80,
         origin: { y: 0.6 }
       });
 
       onCardAdded();
       handleResetAndClose();
     } catch (err) {
-      console.error('Failed to save card:', err);
+      console.error('Failed to save cards:', err);
       alert('名刺の保存に失敗しました。');
     }
   };
 
   const handleResetAndClose = () => {
-    setSelectedImage(null);
-    setCardData(null);
+    setSelectedImages([]);
+    setExtractedCards([]);
+    setActiveCardIndex(0);
     setErrorMsg(null);
     setIsAnalyzing(false);
     setStatusNotice(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
     onClose();
   };
 
-  const addTag = () => {
-    if (newTagInput.trim() && !cardData.tags.includes(newTagInput.trim())) {
-      setCardData({ ...cardData, tags: [...cardData.tags, newTagInput.trim()] });
+  const updateActiveCardField = (field, value) => {
+    const updated = [...extractedCards];
+    updated[activeCardIndex] = { ...updated[activeCardIndex], [field]: value };
+    setExtractedCards(updated);
+  };
+
+  const addTagToActiveCard = () => {
+    if (!newTagInput.trim()) return;
+    const activeCard = extractedCards[activeCardIndex];
+    if (!activeCard.tags.includes(newTagInput.trim())) {
+      updateActiveCardField('tags', [...activeCard.tags, newTagInput.trim()]);
       setNewTagInput('');
     }
   };
 
-  const removeTag = (tagToRemove) => {
-    setCardData({ ...cardData, tags: cardData.tags.filter(t => t !== tagToRemove) });
+  const removeTagFromActiveCard = (tagToRemove) => {
+    const activeCard = extractedCards[activeCardIndex];
+    updateActiveCardField('tags', activeCard.tags.filter(t => t !== tagToRemove));
   };
+
+  const currentCard = extractedCards[activeCardIndex];
 
   return (
     <div className="modal-overlay" onClick={handleResetAndClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Camera size={22} color="#6366F1" />
-            <h2 className="modal-title">名刺スキャン & AI自動解析</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Camera size={20} color="#6366F1" style={{ flexShrink: 0 }} />
+            <h2 className="modal-title" style={{ fontSize: '1.05rem', lineHeight: '1.3' }}>
+              {isMultiScan ? '複数名刺スキャン (最大4枚)' : '名刺スキャン & AI自動解析'}
+            </h2>
           </div>
           <button className="btn btn-secondary btn-icon" onClick={handleResetAndClose}>
             <X size={18} />
           </button>
         </div>
 
-        {!selectedImage && (
+        {selectedImages.length === 0 && (
           <>
+            {/* スキャンモード切替 (通常 vs 複数スキャン) */}
             <div style={{
               display: 'flex',
+              gap: '6px',
+              marginBottom: '14px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              padding: '4px',
+              borderRadius: 'var(--radius-md)'
+            }}>
+              <button
+                className={`btn ${!isMultiScan ? 'btn-primary' : 'btn-secondary'}`}
+                style={{
+                  flex: 1,
+                  padding: '8px 4px',
+                  fontSize: '0.8rem',
+                  whiteSpace: 'nowrap',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px'
+                }}
+                onClick={() => setIsMultiScan(false)}
+              >
+                <Camera size={14} />
+                <span>通常スキャン (1枚)</span>
+              </button>
+              <button
+                className={`btn ${isMultiScan ? 'btn-primary' : 'btn-secondary'}`}
+                style={{
+                  flex: 1,
+                  padding: '8px 4px',
+                  fontSize: '0.8rem',
+                  whiteSpace: 'nowrap',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  background: isMultiScan ? 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)' : ''
+                }}
+                onClick={() => setIsMultiScan(true)}
+              >
+                <Layers size={14} />
+                <span>複数スキャン (最大4枚)</span>
+              </button>
+            </div>
+
+            {/* 複数名刺スキャンモード選択時のみ表示する2×2田の字ガイド表示 */}
+            {isMultiScan && (
+              <div style={{
+                padding: '12px 14px',
+                marginBottom: '16px',
+                background: 'rgba(99, 102, 241, 0.12)',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                fontSize: '0.85rem',
+                color: '#C7D2FE'
+              }}>
+                <Grid size={24} color="#818CF8" style={{ flexShrink: 0 }} />
+                <div>
+                  <strong style={{ display: 'block', color: '#fff', marginBottom: '2px' }}>
+                    💡 複数名刺スキャンガイド (最大4枚まで)
+                  </strong>
+                  机の上に名刺を最大4枚（2×2の田の字配置推奨）並べて撮影するか、ギャラリーから最大4枚まで選択してください。
+                </div>
+              </div>
+            )}
+
+            {/* 詳細オプション */}
+            <div style={{
+              display: 'flex',
+              justify: 'space-around',
+              alignItems: 'center',
               gap: '12px',
               marginBottom: '16px',
-              padding: '12px 14px',
+              padding: '10px 14px',
               background: 'rgba(255, 255, 255, 0.03)',
               border: '1px solid rgba(255, 255, 255, 0.08)',
               borderRadius: 'var(--radius-md)'
@@ -174,38 +345,38 @@ export default function ScannerModal({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                fontSize: '0.88rem',
+                fontSize: '0.82rem',
+                lineHeight: '1.25',
                 cursor: 'pointer',
                 userSelect: 'none',
-                color: isVertical ? 'var(--accent-secondary)' : 'var(--text-color)',
-                fontWeight: isVertical ? '600' : '400'
+                color: isVertical ? 'var(--accent-secondary)' : 'var(--text-color)'
               }}>
                 <input
                   type="checkbox"
                   checked={isVertical}
                   onChange={(e) => setIsVertical(e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent-color)', cursor: 'pointer' }}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent-color)', cursor: 'pointer', flexShrink: 0 }}
                 />
-                <span>↕ 縦書き名刺モード</span>
+                <span>↕ 縦書き<br />レイアウト</span>
               </label>
 
               <label style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                fontSize: '0.88rem',
+                fontSize: '0.82rem',
+                lineHeight: '1.25',
                 cursor: 'pointer',
                 userSelect: 'none',
-                color: isDesignCard ? '#EC4899' : 'var(--text-color)',
-                fontWeight: isDesignCard ? '600' : '400'
+                color: isDesignCard ? '#EC4899' : 'var(--text-color)'
               }}>
                 <input
                   type="checkbox"
                   checked={isDesignCard}
                   onChange={(e) => setIsDesignCard(e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: '#EC4899', cursor: 'pointer' }}
+                  style={{ width: '16px', height: '16px', accentColor: '#EC4899', cursor: 'pointer', flexShrink: 0 }}
                 />
-                <span>🎨 デザイン・カラー名刺モード</span>
+                <span>🎨 デザイン・<br />カラー名刺</span>
               </label>
             </div>
 
@@ -215,20 +386,25 @@ export default function ScannerModal({
                   className="btn btn-primary"
                   style={{
                     width: '100%',
-                    padding: '14px',
+                    padding: '10px 12px',
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '10px',
-                    fontSize: '1rem',
-                    fontWeight: '700',
+                    gap: '3px',
                     background: 'linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%)',
-                    boxShadow: '0 4px 14px rgba(6, 182, 212, 0.35)'
+                    boxShadow: '0 4px 14px rgba(6, 182, 212, 0.35)',
+                    borderRadius: 'var(--radius-md)'
                   }}
                   onClick={() => scanDocumentWithNativeScanner()}
                 >
-                  <ScanLine size={20} color="#fff" />
-                  <span>OS標準ドキュメントスキャナーで撮影 (背景カット・影消し)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', fontWeight: '700' }}>
+                    <ScanLine size={18} color="#fff" />
+                    <span>OS標準ドキュメントスキャナーで撮影</span>
+                  </div>
+                  <span style={{ fontSize: '0.76rem', fontWeight: 'normal', opacity: 0.9 }}>
+                    (背景自動カット・高画質スキャン)
+                  </span>
                 </button>
               </div>
             )}
@@ -238,6 +414,7 @@ export default function ScannerModal({
                 type="file"
                 ref={fileInputRef}
                 accept="image/*"
+                multiple={isMultiScan}
                 style={{ display: 'none' }}
                 onChange={handleFileChange}
               />
@@ -245,21 +422,21 @@ export default function ScannerModal({
                 width: '60px',
                 height: '60px',
                 borderRadius: '50%',
-                background: 'var(--accent-gradient)',
+                background: isMultiScan ? 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)' : 'var(--accent-gradient)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto 16px',
                 boxShadow: 'var(--accent-glow)'
               }}>
-                <Image size={28} color="#fff" />
+                {isMultiScan ? <Grid size={28} color="#fff" /> : <Image size={28} color="#fff" />}
               </div>
               <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '6px' }}>
-                アルバムから名刺画像を選択 / アップロード
+                {isMultiScan ? 'アルバムから複数名刺画像を選択 (最大4枚)' : 'アルバムから名刺画像を選択 / アップロード'}
               </h3>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                {isVertical || isDesignCard
-                  ? `最適化モード [${[isVertical ? '縦書き' : '', isDesignCard ? 'デザイン名刺' : ''].filter(Boolean).join(' / ')}] 有効中`
+                {isMultiScan
+                  ? '机の上に最大4枚並べて撮影した写真または複数枚の画像を一度に選択可能です'
                   : '端末に保存された名刺画像を選択すると、AI が自動で情報抽出します'}
               </p>
             </div>
@@ -294,23 +471,51 @@ export default function ScannerModal({
           </div>
         )}
 
-        {selectedImage && cardData && !isAnalyzing && (
+        {extractedCards.length > 0 && !isAnalyzing && currentCard && (
           <div>
-            <img src={selectedImage} alt="名刺プレビュー" className="scanned-preview-img" />
+            {/* 複数抽出時のタブ切替ヘッダー */}
+            {extractedCards.length > 1 && (
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                marginBottom: '16px',
+                overflowX: 'auto',
+                paddingBottom: '4px'
+              }}>
+                {extractedCards.map((card, idx) => (
+                  <button
+                    key={idx}
+                    className={`btn ${idx === activeCardIndex ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '6px 14px', fontSize: '0.85rem', flexShrink: 0 }}
+                    onClick={() => setActiveCardIndex(idx)}
+                  >
+                    名刺 #{idx + 1}: {card.name || '未入力'}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10B981', fontSize: '0.85rem', marginBottom: '16px', fontWeight: '600' }}>
               <CheckCircle2 size={18} />
-              <span>AI解析が完了しました！内容を確認・調整してデータベースに保存してください。</span>
+              <span>
+                {extractedCards.length > 1
+                  ? `${extractedCards.length} 件の名刺を抽出しました！各カードの内容を確認・調整してください。`
+                  : 'AI解析が完了しました！内容を確認・調整してデータベースに保存してください。'}
+              </span>
             </div>
+
+            {currentCard.image && (
+              <img src={currentCard.image} alt="名刺プレビュー" className="scanned-preview-img" style={{ maxHeight: '180px', objectFit: 'contain', width: '100%', marginBottom: '16px' }} />
+            )}
 
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label">氏名 *</label>
+                <label className="form-label">氏名 * ({activeCardIndex + 1}/{extractedCards.length})</label>
                 <input
                   type="text"
                   className="form-input"
-                  value={cardData.name}
-                  onChange={(e) => setCardData({ ...cardData, name: e.target.value })}
+                  value={currentCard.name}
+                  onChange={(e) => updateActiveCardField('name', e.target.value)}
                 />
               </div>
 
@@ -319,8 +524,8 @@ export default function ScannerModal({
                 <input
                   type="text"
                   className="form-input"
-                  value={cardData.reading}
-                  onChange={(e) => setCardData({ ...cardData, reading: e.target.value })}
+                  value={currentCard.reading}
+                  onChange={(e) => updateActiveCardField('reading', e.target.value)}
                 />
               </div>
             </div>
@@ -331,8 +536,8 @@ export default function ScannerModal({
                 <input
                   type="text"
                   className="form-input"
-                  value={cardData.company}
-                  onChange={(e) => setCardData({ ...cardData, company: e.target.value })}
+                  value={currentCard.company}
+                  onChange={(e) => updateActiveCardField('company', e.target.value)}
                 />
               </div>
 
@@ -341,8 +546,8 @@ export default function ScannerModal({
                 <input
                   type="text"
                   className="form-input"
-                  value={cardData.title}
-                  onChange={(e) => setCardData({ ...cardData, title: e.target.value })}
+                  value={currentCard.title}
+                  onChange={(e) => updateActiveCardField('title', e.target.value)}
                 />
               </div>
             </div>
@@ -353,8 +558,8 @@ export default function ScannerModal({
                 <input
                   type="text"
                   className="form-input"
-                  value={cardData.phone}
-                  onChange={(e) => setCardData({ ...cardData, phone: e.target.value })}
+                  value={currentCard.phone}
+                  onChange={(e) => updateActiveCardField('phone', e.target.value)}
                 />
               </div>
 
@@ -363,8 +568,8 @@ export default function ScannerModal({
                 <input
                   type="text"
                   className="form-input"
-                  value={cardData.mobile}
-                  onChange={(e) => setCardData({ ...cardData, mobile: e.target.value })}
+                  value={currentCard.mobile}
+                  onChange={(e) => updateActiveCardField('mobile', e.target.value)}
                 />
               </div>
             </div>
@@ -374,8 +579,8 @@ export default function ScannerModal({
               <input
                 type="email"
                 className="form-input"
-                value={cardData.email}
-                onChange={(e) => setCardData({ ...cardData, email: e.target.value })}
+                value={currentCard.email}
+                onChange={(e) => updateActiveCardField('email', e.target.value)}
               />
             </div>
 
@@ -384,19 +589,19 @@ export default function ScannerModal({
               <input
                 type="text"
                 className="form-input"
-                value={cardData.address}
-                onChange={(e) => setCardData({ ...cardData, address: e.target.value })}
+                value={currentCard.address}
+                onChange={(e) => updateActiveCardField('address', e.target.value)}
               />
             </div>
 
             <div className="form-group">
               <label className="form-label">タグ</label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                {cardData.tags.map((t, idx) => (
+                {currentCard.tags.map((t, idx) => (
                   <span key={idx} className="tag-pill active" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     <Tag size={12} />
                     {t}
-                    <X size={12} style={{ cursor: 'pointer' }} onClick={() => removeTag(t)} />
+                    <X size={12} style={{ cursor: 'pointer' }} onClick={() => removeTagFromActiveCard(t)} />
                   </span>
                 ))}
               </div>
@@ -408,15 +613,23 @@ export default function ScannerModal({
                   placeholder="新しいタグを追加..."
                   value={newTagInput}
                   onChange={(e) => setNewTagInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagToActiveCard(); } }}
                 />
-                <button className="btn btn-secondary" onClick={addTag}>追加</button>
+                <button className="btn btn-secondary" onClick={addTagToActiveCard}>追加</button>
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px' }}>
               <button className="btn btn-secondary" onClick={handleResetAndClose}>キャンセル</button>
-              <button className="btn btn-primary" onClick={handleSaveCard}>データベースに保存</button>
+              <button
+                className="btn btn-primary"
+                style={{ background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)' }}
+                onClick={handleSaveAllCards}
+              >
+                {extractedCards.length > 1
+                  ? `${extractedCards.length} 件の名刺を一括保存`
+                  : 'データベースに保存'}
+              </button>
             </div>
           </div>
         )}

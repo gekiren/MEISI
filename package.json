@@ -11,15 +11,21 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^3.1.1",
     "canvas-confetti": "^1.9.4",
     "dexie": "^4.4.4",
     "expo": "~57.0.7",
+    "expo-clipboard": "^57.0.1",
+    "expo-image-picker": "^57.0.6",
+    "expo-linear-gradient": "^57.0.1",
     "expo-updates": "~57.0.10",
     "lucide-react": "^1.27.0",
+    "lucide-react-native": "^1.27.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-native": "0.86.0",
     "react-native-document-scanner-plugin": "^0.8.0",
+    "react-native-svg": "^15.15.5",
     "react-native-webview": "^14.0.1",
     "tesseract.js": "^5.1.1"
   },
