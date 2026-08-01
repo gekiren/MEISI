@@ -109,12 +109,22 @@ export default function CardDetailModalNative({ card, isOpen, onClose, onUpdated
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>電話番号</Text>
+                  <Text style={styles.label}>固定電話番号</Text>
                   <TextInput
                     style={styles.input}
                     keyboardType="phone-pad"
                     value={editData.phone}
                     onChangeText={(val) => setEditData({ ...editData, phone: val })}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>携帯電話番号</Text>
+                  <TextInput
+                    style={styles.input}
+                    keyboardType="phone-pad"
+                    value={editData.mobile}
+                    onChangeText={(val) => setEditData({ ...editData, mobile: val })}
                   />
                 </View>
 
@@ -164,6 +174,10 @@ export default function CardDetailModalNative({ card, isOpen, onClose, onUpdated
                   <TouchableOpacity style={styles.infoRow} onPress={() => makeCall(card.mobile)}>
                     <Phone size={16} color="#38BDF8" style={{ marginRight: 10 }} />
                     <Text style={styles.linkText}>{card.mobile} (携帯)</Text>
+                    <View style={styles.callkitBadge}>
+                      <ShieldCheck size={12} color={theme.colors.accentCyan} style={{ marginRight: 2 }} />
+                      <Text style={styles.callkitBadgeText}>CallKit 同期</Text>
+                    </View>
                   </TouchableOpacity>
                 ) : null}
 

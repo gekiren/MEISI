@@ -503,12 +503,22 @@ export default function ScannerModalNative({
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>電話番号 (CallKit同期対象)</Text>
+                  <Text style={styles.label}>固定電話番号 (CallKit同期対象)</Text>
                   <TextInput
                     style={styles.input}
                     keyboardType="phone-pad"
                     value={currentCard.phone}
                     onChangeText={(val) => updateActiveCardField('phone', val)}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>携帯電話番号 (CallKit同期対象)</Text>
+                  <TextInput
+                    style={styles.input}
+                    keyboardType="phone-pad"
+                    value={currentCard.mobile}
+                    onChangeText={(val) => updateActiveCardField('mobile', val)}
                   />
                 </View>
 
