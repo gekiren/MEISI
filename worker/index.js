@@ -92,6 +92,9 @@ async function callGemini36Flash(base64Image, apiKey, ocrHintText = '', scanOpti
     cleanBase64 = parts[1];
   }
 
+  // カメラ撮影・ドキュメントスキャナー等から混入する改行コード(\r, \n)や空白を全除去
+  cleanBase64 = cleanBase64.replace(/\s+/g, '');
+
   const hintPrompt = ocrHintText ? `\n【参考：オンデバイスOCR事前抽出テキスト】\n${ocrHintText}\n` : '';
 
   let modePrompts = [];
@@ -129,35 +132,47 @@ ${modeInstruction}${hintPrompt}
 }
 `;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+  // モデル名のフォールバックリスト (最新モデル gemini-3.6-flash -> gemini-2.0-flash)
+  const candidateModels = ['gemini-3.6-flash', 'gemini-2.0-flash'];
+  let lastError = null;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          { inline_data: { mime_type: mimeType, data: cleanBase64 } }
-        ]
-      }],
-      generationConfig: { response_mime_type: "application/json" }
-    })
-  });
+  for (const modelName of candidateModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: mimeType, data: cleanBase64 } }
+            ]
+          }],
+          generationConfig: { response_mime_type: "application/json" }
+        })
+      });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Gemini API HTTP ${response.status}`);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Gemini API (${modelName}) HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      let cleanJson = text.trim().replace(/^```json\n?/, '').replace(/\n?```$/, '');
+      const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanJson = jsonMatch[0];
+      }
+      return JSON.parse(cleanJson);
+    } catch (err) {
+      console.warn(`Worker: ${modelName} call failed:`, err.message);
+      lastError = err;
+    }
   }
 
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  let cleanJson = text.trim().replace(/^```json\n?/, '').replace(/\n?```$/, '');
-  const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    cleanJson = jsonMatch[0];
-  }
-  return JSON.parse(cleanJson);
+  throw lastError || new Error('Gemini API呼び出しに失敗しました。');
 }
 
 async function callDeepSeekV4(base64Image, apiKey, ocrHintText = '', scanOptions = {}) {

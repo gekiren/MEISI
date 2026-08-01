@@ -68,11 +68,12 @@ export default function ScannerModalNative({
           return;
         }
 
-        const base64Images = result.assets.map(asset => 
-          asset.base64?.startsWith('data:image') 
+        const base64Images = result.assets.map(asset => {
+          const raw = asset.base64?.startsWith('data:image') 
             ? asset.base64 
-            : `data:image/jpeg;base64,${asset.base64}`
-        );
+            : `data:image/jpeg;base64,${asset.base64}`;
+          return raw.replace(/\s+/g, '');
+        });
 
         setSelectedImages(base64Images);
         setErrorMsg(null);
@@ -99,9 +100,10 @@ export default function ScannerModalNative({
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const base64Img = result.assets[0].base64?.startsWith('data:image') 
+        const raw = result.assets[0].base64?.startsWith('data:image') 
           ? result.assets[0].base64 
           : `data:image/jpeg;base64,${result.assets[0].base64}`;
+        const base64Img = raw.replace(/\s+/g, '');
 
         setSelectedImages([base64Img]);
         setErrorMsg(null);
@@ -134,9 +136,10 @@ export default function ScannerModalNative({
           return;
         }
 
-        const formattedImages = scannedImages.map(img =>
-          img.startsWith('data:image') ? img : `data:image/jpeg;base64,${img}`
-        );
+        const formattedImages = scannedImages.map(img => {
+          const raw = img.startsWith('data:image') ? img : `data:image/jpeg;base64,${img}`;
+          return raw.replace(/\s+/g, '');
+        });
 
         setSelectedImages(formattedImages);
         setErrorMsg(null);

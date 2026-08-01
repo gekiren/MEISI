@@ -87,10 +87,13 @@ export async function analyzeCardWithWorkerProxy(base64Image, proxyUrl, ocrHintT
   const targetProxy = proxyUrl || DEFAULT_WORKER_PROXY_URL;
   const cleanUrl = targetProxy.replace(/\/$/, '') + '/api/analyze-card';
 
+  // Base64文字列から改行・空白を除去
+  const sanitizedBase64 = base64Image ? base64Image.replace(/\s+/g, '') : '';
+
   const response = await fetch(cleanUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: base64Image, ocrHintText, scanOptions })
+    body: JSON.stringify({ image: sanitizedBase64, ocrHintText, scanOptions })
   });
 
   if (!response.ok) {
