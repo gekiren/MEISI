@@ -6,6 +6,16 @@
 import { normalizePhoneNumber } from '../db/db';
 
 /**
+ * 会社名から「株式会社」「有限会社」などの法人種別表記（法人格表記）を除去して文字数を削減
+ */
+export function cleanCompanyName(company) {
+  if (!company) return '';
+  return company
+    .replace(/(株式会社|有限会社|合同会社|合名会社|合資会社|一般社団法人|一般財団法人|公益社団法人|公益財団法人|医療法人|社会福祉法人|学校法人|Inc\.?|Co\.,?\s*Ltd\.?|Ltd\.?|Co\.?)/gi, '')
+    .trim();
+}
+
+/**
  * 名刺リストから CallKit 準拠の着信識別データベース形式テキストを生成
  * iOS CallDirectory の仕様: 電話番号は昇順（昇順で数値ソート）
  */
@@ -13,7 +23,8 @@ export function generateCallKitDirectoryData(cards) {
   const entries = [];
 
   cards.forEach(card => {
-    const label = `${card.name}${card.company ? ` (${card.company})` : ''} [MeisiScan]`;
+    const cleanedCompany = cleanCompanyName(card.company);
+    const label = `${card.name}${cleanedCompany ? ` (${cleanedCompany})` : ''} [MeisiScan]`;
     
     if (card.phone) {
       const normPhone = normalizePhoneNumber(card.phone);
