@@ -84,16 +84,20 @@ async function analyzeCardWithFallback(base64Image, env, ocrHintText = '', scanO
 
 async function callGemini36Flash(base64Image, apiKey, ocrHintText = '', scanOptions = {}) {
   let mimeType = 'image/jpeg';
-  let cleanBase64 = base64Image;
+  let cleanBase64 = base64Image || '';
 
-  if (base64Image.includes(';base64,')) {
-    const parts = base64Image.split(';base64,');
-    mimeType = parts[0].replace('data:', '');
+  if (cleanBase64.includes(';base64,')) {
+    const parts = cleanBase64.split(';base64,');
+    mimeType = parts[0].replace('data:', '') || 'image/jpeg';
     cleanBase64 = parts[1];
+  } else if (cleanBase64.startsWith('data:')) {
+    const parts = cleanBase64.split(',');
+    mimeType = parts[0].replace('data:', '').replace(';base64', '') || 'image/jpeg';
+    cleanBase64 = parts[1] || '';
   }
 
-  // カメラ撮影・ドキュメントスキャナー等から混入する改行コード(\r, \n)や空白を全除去
-  cleanBase64 = cleanBase64.replace(/\s+/g, '');
+  // 余分な改行コードを除去
+  cleanBase64 = cleanBase64.trim();
 
   const hintPrompt = ocrHintText ? `\n【参考：オンデバイスOCR事前抽出テキスト】\n${ocrHintText}\n` : '';
 
@@ -104,9 +108,39 @@ async function callGemini36Flash(base64Image, apiKey, ocrHintText = '', scanOpti
   if (scanOptions.isDesignCard) {
     modePrompts.push('※注意【デザイン・カラー名刺モード】: この名刺はカラフルな背景・複雑なグラフィックノイズ・ロゴマーク・変形フォントが含まれる場合があります。背景ノイズを分離し、本来のテキスト要素を正確に検出してください。');
   }
+  if (scanOptions.isMultiScan) {
+    modePrompts.push('※注意【複数名刺モード (最大4枚まで)】: この画像には最大4枚までの名刺が並べて撮影されている可能性があります。画像内の各名刺を個別に検出・区別し、それぞれの名刺情報を `cards` 配列として出力してください。');
+  }
   const modeInstruction = modePrompts.length > 0 ? `\n${modePrompts.join('\n')}\n` : '';
 
-  const prompt = `
+  const prompt = scanOptions.isMultiScan ? `
+あなたは名刺情報の高精度解析AIです。添付画像に写っている各名刺（最大4枚）から、記載されている情報をそれぞれ正確に抽出して指定のJSONフォーマットで返却してください。
+${modeInstruction}${hintPrompt}
+余計な説明やMarkdown修飾は含めず、純粋なJSONオブジェクトのみを出力してください。
+添付画像が名刺ではない場合（エラー画面のスクリーンショット、スマホ画面、キーボード、風景、書籍、名刺と無関係な写真など）、"isBusinessCard": false, "reason": "名刺画像を検知できませんでした。名刺がはっきりと写っている画像でお試しください。" にしてください。
+
+【返却フォーマット】
+{
+  "isBusinessCard": true,
+  "cards": [
+    {
+      "name": "氏名",
+      "reading": "フリガナ",
+      "company": "会社名",
+      "department": "部署名",
+      "title": "役職名",
+      "phone": "固定電話番号",
+      "mobile": "携帯電話番号",
+      "email": "メールアドレス",
+      "postalCode": "郵便番号",
+      "address": "住所",
+      "website": "WebサイトURL",
+      "memo": "その他特記事項",
+      "tags": ["検出キーワード"]
+    }
+  ]
+}
+` : `
 あなたは名刺情報の高精度解析AIです。添付された名刺画像から、記載されている情報を正確に抽出して指定のJSONフォーマットで返却してください。
 ${modeInstruction}${hintPrompt}
 余計な説明やMarkdown修飾は含めず、純粋なJSONオブジェクトのみを出力してください。
@@ -132,8 +166,8 @@ ${modeInstruction}${hintPrompt}
 }
 `;
 
-  // モデル名のフォールバックリスト (最新モデル gemini-3.6-flash -> gemini-2.0-flash)
-  const candidateModels = ['gemini-3.6-flash', 'gemini-2.0-flash'];
+  // モデル名のフォールバックリスト (gemini-3.6-flash -> gemini-1.5-flash)
+  const candidateModels = ['gemini-3.6-flash', 'gemini-1.5-flash'];
   let lastError = null;
 
   for (const modelName of candidateModels) {
@@ -183,17 +217,53 @@ async function callDeepSeekV4(base64Image, apiKey, ocrHintText = '', scanOptions
   if (scanOptions.isDesignCard) {
     modePrompts.push('※注意【デザイン・カラー名刺モード】');
   }
+  if (scanOptions.isMultiScan) {
+    modePrompts.push('※注意【複数名刺モード】: このテキストには1枚または複数枚（最大4枚）の名刺情報が含まれています。文字化けやレイアウトの乱れがあっても文脈から判別し、各名刺の要素を区別して `cards` 配列として出力してください。');
+  }
   const modeInstruction = modePrompts.length > 0 ? `\n${modePrompts.join('\n')}\n` : '';
 
-  const prompt = `
+  const prompt = scanOptions.isMultiScan ? `
+あなたは名刺情報の高精度解析AIです。
+以下はオンデバイスOCRで事前抽出された名刺の生テキストです。このテキストから名刺（1枚または複数枚可能）情報を抽出し、指定のJSONフォーマットで返却してください。
+${modeInstruction}
+【オンデバイスOCR事前抽出テキスト】
+${ocrHintText || '(テキスト未検出)'}
+
+OCRテキストに誤字脱字や改行の乱れがあっても、人物名、会社名、役職、電話番号、メールアドレス、住所等の文脈を総合的に分析して各名刺の要素を特定してください。
+テキストから名刺要素がどうしても全く検出できない場合のみ "isBusinessCard": false, "reason": "テキスト情報を検知できませんでした。" にしてください。
+少しでも名刺要素が読み取れる場合は "isBusinessCard": true にし、推測可能な項目を補完して出力してください。
+
+【返却フォーマット】
+{
+  "isBusinessCard": true,
+  "cards": [
+    {
+      "name": "氏名",
+      "reading": "フリガナ",
+      "company": "会社名",
+      "department": "部署名",
+      "title": "役職名",
+      "phone": "固定電話番号",
+      "mobile": "携帯電話番号",
+      "email": "メールアドレス",
+      "postalCode": "郵便番号",
+      "address": "住所",
+      "website": "WebサイトURL",
+      "memo": "特記事項",
+      "tags": ["検出キーワード"]
+    }
+  ]
+}
+` : `
 あなたは名刺情報の高精度解析AIです。
 以下はオンデバイスOCRで事前抽出された名刺の生テキストです。このテキストから名刺情報を抽出し、指定のJSONフォーマットで返却してください。
 ${modeInstruction}
 【オンデバイスOCR事前抽出テキスト】
 ${ocrHintText || '(テキスト未検出)'}
 
-テキストから名刺要素が検出できない場合は "isBusinessCard": false, "reason": "テキスト情報を検知できませんでした。" にしてください。
-検出できる場合は "isBusinessCard": true にしてください。
+OCRテキストに誤字脱字や改行の乱れがあっても、人物名、会社名、役職、電話番号、メールアドレス、住所等の文脈を総合的に分析して名刺要素を特定してください。
+テキストから名刺要素がどうしても全く検出できない場合のみ "isBusinessCard": false, "reason": "テキスト情報を検知できませんでした。" にしてください。
+少しでも名刺要素が読み取れる場合は "isBusinessCard": true にし、推測可能な項目を補完して出力してください。
 
 【返却フォーマット】
 {

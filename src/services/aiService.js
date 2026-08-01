@@ -23,9 +23,43 @@ export async function analyzeBusinessCardWithDeepSeek(
   if (scanOptions.isDesignCard) {
     modePrompts.push('※注意【デザイン・カラー名刺モード】');
   }
+  if (scanOptions.isMultiScan) {
+    modePrompts.push('※注意【複数名刺モード】: テキストから複数名刺の情報が抽出できる場合は `cards` 配列として返却してください。');
+  }
   const modeInstruction = modePrompts.length > 0 ? `\n${modePrompts.join('\n')}\n` : '';
 
-  const prompt = `
+  const prompt = scanOptions.isMultiScan ? `
+あなたは名刺情報の高精度解析AIです。
+以下はオンデバイスOCRで事前抽出された名刺の生テキストです。このテキストから名刺（複数枚可能）情報を抽出し、指定のJSONフォーマットで返却してください。
+${modeInstruction}
+【オンデバイスOCR事前抽出テキスト】
+${ocrHintText || '(テキスト未検出)'}
+
+テキストから名刺要素が検出できない場合は "isBusinessCard": false, "reason": "テキスト情報を検知できませんでした。" にしてください。
+検出できる場合は "isBusinessCard": true にしてください。
+
+【返却フォーマット】
+{
+  "isBusinessCard": true,
+  "cards": [
+    {
+      "name": "氏名",
+      "reading": "フリガナ",
+      "company": "会社名",
+      "department": "部署名",
+      "title": "役職名",
+      "phone": "固定電話番号",
+      "mobile": "携帯電話番号",
+      "email": "メールアドレス",
+      "postalCode": "郵便番号",
+      "address": "住所",
+      "website": "WebサイトURL",
+      "memo": "特記事項",
+      "tags": ["検出キーワード"]
+    }
+  ]
+}
+` : `
 あなたは名刺情報の高精度解析AIです。
 以下はオンデバイスOCRで事前抽出された名刺の生テキストです。このテキストから名刺情報を抽出し、指定のJSONフォーマットで返却してください。
 ${modeInstruction}
@@ -118,7 +152,7 @@ export async function analyzeBusinessCardWithFallback(
   onFallbackNotice,
   scanOptions = {}
 ) {
-  // Step 1: オンデバイス（ローカルWebAssembly）OCR による事前検証
+  // Step 1: オンデバイス（ローカルWebAssembly）OCR による事前検証 (タイムアウト1.5秒でAI優先)
   let ocrResult = { text: '', confidence: 0 };
   try {
     if (onFallbackNotice) {
@@ -127,12 +161,15 @@ export async function analyzeBusinessCardWithFallback(
         scanOptions.isDesignCard ? 'デザイン名刺' : ''
       ].filter(Boolean).join(' & ');
       const modeText = modeLabel ? ` (${modeLabel}モード)` : '';
-      onFallbackNotice(`オンデバイスOCRで名刺テキストを事前判定中${modeText}...`);
+      onFallbackNotice(`AI解析を準備中${modeText}...`);
     }
 
-    ocrResult = await extractTextWithLocalOCR(base64Image, (progressMsg) => {
+    const ocrPromise = extractTextWithLocalOCR(base64Image, (progressMsg) => {
       if (onFallbackNotice) onFallbackNotice(progressMsg);
     });
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ text: '', confidence: 0 }), 1500));
+
+    ocrResult = await Promise.race([ocrPromise, timeoutPromise]);
 
     const guardCheck = validateBusinessCardContent(ocrResult.text, scanOptions);
     if (!guardCheck.isCard) {
@@ -197,7 +234,7 @@ export async function analyzeBusinessCardWithFallback(
     onFallbackNotice('AI API接続不可のため、オンデバイスOCR（オフライン解析）で自動抽出中...');
   }
 
-  const localCardData = parseOcrTextToCard(ocrResult.text);
+  const localCardData = parseOcrTextToCard(ocrResult.text, scanOptions);
   return localCardData;
 }
 

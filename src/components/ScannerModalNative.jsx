@@ -3,6 +3,7 @@ import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIn
 import { LinearGradient } from 'expo-linear-gradient';
 import { X, Camera, Sparkles, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, Grid, Layers, Tag as TagIcon } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import DocumentScanner, { ResponseType } from 'react-native-document-scanner-plugin';
 import { analyzeBusinessCardWithFallback } from '../services/aiService';
 import { addCard } from '../db/db';
@@ -45,7 +46,37 @@ export default function ScannerModalNative({
     setNewTagInput('');
   };
 
-  // ギャラリーから画像を選択 (Expo ImagePicker)
+  // 画像URI/Base64をAI送信用Base64へ安全にオンデマンド変換 (ガード付き)
+  const ensureBase64Image = async (imageUri) => {
+    if (!imageUri) throw new Error('画像データが存在しません。');
+    if (imageUri.startsWith('data:image')) {
+      return imageUri;
+    }
+
+    try {
+      let cleanUri = imageUri;
+      if (!cleanUri.startsWith('file://') && !cleanUri.startsWith('content://') && cleanUri.startsWith('/')) {
+        cleanUri = `file://${cleanUri}`;
+      }
+      const base64Str = await FileSystem.readAsStringAsync(cleanUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      if (base64Str && base64Str.length > 100) {
+        return `data:image/jpeg;base64,${base64Str}`;
+      }
+    } catch (err) {
+      console.warn('FileSystem.readAsStringAsync failed:', err);
+    }
+
+    // パス文字列がそのまま残っている場合はAI送信を即座に安全ガード
+    if (imageUri.startsWith('file://') || imageUri.startsWith('content://') || imageUri.startsWith('/')) {
+      throw new Error('画像の読み込みに失敗しました。端末の設定または画像パーミッションをご確認ください。');
+    }
+
+    return `data:image/jpeg;base64,${imageUri}`;
+  };
+
+  // ギャラリーから画像を選択 (Expo ImagePicker - base64: true, quality: 0.75)
   const pickImagesFromGallery = async () => {
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -58,7 +89,7 @@ export default function ScannerModalNative({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: isMultiScan,
         selectionLimit: isMultiScan ? 4 : 1,
-        quality: 0.9,
+        quality: 0.75,
         base64: true,
       });
 
@@ -68,16 +99,16 @@ export default function ScannerModalNative({
           return;
         }
 
-        const base64Images = result.assets.map(asset => {
-          const raw = asset.base64?.startsWith('data:image') 
-            ? asset.base64 
-            : `data:image/jpeg;base64,${asset.base64}`;
-          return raw.replace(/\s+/g, '');
-        });
+        const images = result.assets.map(asset => {
+          if (asset.base64) {
+            return `data:image/jpeg;base64,${asset.base64}`;
+          }
+          return asset.uri;
+        }).filter(Boolean);
 
-        setSelectedImages(base64Images);
+        setSelectedImages(images);
         setErrorMsg(null);
-        startBatchAnalysis(base64Images);
+        startBatchAnalysis(images);
       }
     } catch (err) {
       console.error('Pick image error:', err);
@@ -85,7 +116,7 @@ export default function ScannerModalNative({
     }
   };
 
-  // 通常カメラでのフォールバック撮影
+  // 通常カメラでのフォールバック撮影 (base64: true, quality: 0.75)
   const launchCameraFallback = async () => {
     try {
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
@@ -95,27 +126,29 @@ export default function ScannerModalNative({
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        quality: 0.9,
+        quality: 0.75,
         base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const raw = result.assets[0].base64?.startsWith('data:image') 
-          ? result.assets[0].base64 
-          : `data:image/jpeg;base64,${result.assets[0].base64}`;
-        const base64Img = raw.replace(/\s+/g, '');
+        setIsAnalyzing(true);
+        setStatusNotice('撮影画像を読み込み中...');
 
-        setSelectedImages([base64Img]);
+        const asset = result.assets[0];
+        const cameraImg = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+
+        setSelectedImages([cameraImg]);
         setErrorMsg(null);
-        startBatchAnalysis([base64Img]);
+        startBatchAnalysis([cameraImg]);
       }
     } catch (err) {
       console.error('Camera fallback error:', err);
+      setIsAnalyzing(false);
       Alert.alert('エラー', 'カメラの起動に失敗しました。アルバム選択をお試しください。');
     }
   };
 
-  // OS標準ドキュメントスキャナーの起動
+  // OS標準ドキュメントスキャナーの起動 (ResponseType.Base64, croppedImageQuality: 75)
   const launchNativeDocumentScanner = async () => {
     try {
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
@@ -124,22 +157,25 @@ export default function ScannerModalNative({
         return;
       }
 
-      const { scannedImages, status } = await DocumentScanner.scanDocument({
-        croppedImageQuality: 90,
+      const response = await DocumentScanner.scanDocument({
+        croppedImageQuality: 75,
         maxNumDocuments: isMultiScan ? 4 : 1,
         responseType: ResponseType.Base64,
       });
 
-      if (status === 'success' && scannedImages && scannedImages.length > 0) {
+      const scannedImages = response?.scannedImages || [];
+      const status = response?.status;
+
+      if (status !== 'cancel' && scannedImages.length > 0) {
         if (scannedImages.length >= 5) {
           Alert.alert('制限超過', '一度にスキャンできる名刺は最大4枚までです。');
           return;
         }
 
-        const formattedImages = scannedImages.map(img => {
-          const raw = img.startsWith('data:image') ? img : `data:image/jpeg;base64,${img}`;
-          return raw.replace(/\s+/g, '');
-        });
+        setIsAnalyzing(true);
+        setStatusNotice('撮影画像を読み込み中...');
+
+        const formattedImages = scannedImages.map(img => img.startsWith('data:image') ? img : `data:image/jpeg;base64,${img}`);
 
         setSelectedImages(formattedImages);
         setErrorMsg(null);
@@ -147,6 +183,7 @@ export default function ScannerModalNative({
       }
     } catch (err) {
       console.error('Document scanner error:', err);
+      setIsAnalyzing(false);
       Alert.alert(
         'スキャナー起動エラー',
         'ドキュメントスキャナーの起動に失敗しました。\n\n通常のカメラで撮影しますか？',
@@ -165,20 +202,25 @@ export default function ScannerModalNative({
     setErrorMsg(null);
     setExtractedCards([]);
 
-    const scanOptions = { isVertical, isDesignCard, isMultiScan };
+    // 複数画像が指定されている場合も isMultiScan を有効化
+    const effectiveMultiScan = isMultiScan || imagesList.length > 1;
+    const scanOptions = { isVertical, isDesignCard, isMultiScan: effectiveMultiScan };
     const allCards = [];
     let hasError = false;
     let lastErrorReason = null;
 
     try {
       for (let i = 0; i < imagesList.length; i++) {
-        const img = imagesList[i];
+        const rawUri = imagesList[i];
         if (imagesList.length > 1) {
           setStatusNotice(`AI 解析中 (${i + 1} / ${imagesList.length} 枚目)...`);
         }
 
+        // オンデマンドで Base64 へ安全に変換 (OOM回避)
+        const base64Img = await ensureBase64Image(rawUri);
+
         const result = await analyzeBusinessCardWithFallback(
-          img,
+          base64Img,
           geminiApiKey,
           deepSeekApiKey,
           workerProxyUrl,
@@ -192,6 +234,7 @@ export default function ScannerModalNative({
           continue;
         }
 
+        // 応答内に `cards` 配列が存在する場合 (1画像内に複数名刺)
         if (Array.isArray(result.cards) && result.cards.length > 0) {
           if (result.cards.length >= 5) {
             hasError = true;
@@ -199,8 +242,9 @@ export default function ScannerModalNative({
             continue;
           }
           result.cards.forEach((c) => {
+            const cleanName = (c.name || '').replace(/[(（]名刺読み取り失敗[）)]/g, '').replace(/[(（]氏名未検出[）)]/g, '').trim();
             allCards.push({
-              name: c.name || '',
+              name: cleanName,
               reading: c.reading || '',
               company: c.company || '',
               department: c.department || '',
@@ -212,11 +256,12 @@ export default function ScannerModalNative({
               address: c.address || '',
               website: c.website || '',
               memo: c.memo || '',
-              tags: c.tags || ['新規名刺'],
-              image: img
+              tags: Array.isArray(c.tags) && c.tags.length > 0 ? c.tags : ['新規名刺'],
+              image: rawUri
             });
           });
         } else {
+          // 単一カード構造の応答
           const cleanName = (result.name || '').replace(/[(（]名刺読み取り失敗[）)]/g, '').replace(/[(（]氏名未検出[）)]/g, '').trim();
           const hasCoreInfo = cleanName || result.company || result.phone || result.mobile || result.email;
           if (!hasCoreInfo) {
@@ -238,8 +283,8 @@ export default function ScannerModalNative({
             address: result.address || '',
             website: result.website || '',
             memo: result.memo || '',
-            tags: result.tags || ['新規名刺'],
-            image: img
+            tags: Array.isArray(result.tags) && result.tags.length > 0 ? result.tags : ['新規名刺'],
+            image: rawUri
           });
         }
       }
@@ -419,7 +464,12 @@ export default function ScannerModalNative({
             {errorMsg && (
               <View style={styles.errorBox}>
                 <AlertCircle size={18} color={theme.colors.danger} style={{ marginRight: 8 }} />
-                <Text style={styles.errorText}>{errorMsg}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.errorText}>{errorMsg}</Text>
+                  <TouchableOpacity style={styles.retryBtn} onPress={handleReset}>
+                    <Text style={styles.retryBtnText}>↻ 撮影・画像をやり直す</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -847,5 +897,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFF',
+  },
+  retryBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  retryBtnText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

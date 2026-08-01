@@ -54,13 +54,103 @@ export function validateBusinessCardContent(text, options = {}) {
   return { isCard: true };
 }
 
+export function parseSingleCardFromLines(lines) {
+  let email = '';
+  let phone = '';
+  let mobile = '';
+  let postalCode = '';
+  let address = '';
+  let website = '';
+  let company = '';
+  let name = '';
+  let title = '';
+  const remainingLines = [];
+
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  const mobileRegex = /(?:090|080|070)[-\s]?\d{4}[-\s]?\d{4}/;
+  const phoneRegex = /(?:0\d{1,4})[-\s]?\d{1,4}[-\s]?\d{3,4}/;
+  const postalRegex = /〒?\s?(\d{3}[-\s]\d{4})/;
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/;
+  const titleKeywords = ['代表取締役', '取締役', '社長', '部長', '課長', 'マネージャー', 'CEO', 'CTO', 'CFO', '主任', '係長', '代表'];
+  const companyKeywords = ['株式会社', '有限会社', '合同会社', '一般社団法人', 'Inc.', 'Co.', 'Ltd.'];
+
+  for (const line of lines) {
+    if (!email && emailRegex.test(line)) {
+      const match = line.match(emailRegex);
+      if (match) email = match[0];
+      continue;
+    }
+    if (!website && urlRegex.test(line)) {
+      const match = line.match(urlRegex);
+      if (match) website = match[0];
+      continue;
+    }
+    if (!mobile && mobileRegex.test(line)) {
+      const match = line.match(mobileRegex);
+      if (match) mobile = match[0];
+      continue;
+    }
+    if (!phone && phoneRegex.test(line)) {
+      const match = line.match(phoneRegex);
+      if (match) phone = match[0];
+      continue;
+    }
+    if (!postalCode && postalRegex.test(line)) {
+      const match = line.match(postalRegex);
+      if (match) postalCode = match[1];
+      continue;
+    }
+    if (!company && companyKeywords.some(k => line.includes(k))) {
+      company = line;
+      continue;
+    }
+    if (!title && titleKeywords.some(k => line.includes(k))) {
+      title = line;
+      continue;
+    }
+    if (!address && (line.includes('都') || line.includes('道') || line.includes('府') || line.includes('県') || line.includes('区') || line.includes('市'))) {
+      if (/\d/.test(line)) {
+        address = line;
+        continue;
+      }
+    }
+    remainingLines.push(line);
+  }
+
+  if (remainingLines.length > 0) {
+    for (const cand of remainingLines) {
+      const cleanCand = cand.replace(/\s+/g, '');
+      if (cleanCand.length >= 2 && cleanCand.length <= 6 && !/\d/.test(cleanCand)) {
+        name = cand;
+        break;
+      }
+    }
+  }
+  if (!name && remainingLines.length > 0) {
+    name = remainingLines[0];
+  }
+
+  return {
+    name: name || '',
+    reading: '',
+    company: company || '',
+    department: '',
+    title: title || '',
+    phone: phone || '',
+    mobile: mobile || '',
+    email: email || '',
+    postalCode: postalCode || '',
+    address: address || '',
+    website: website || '',
+    memo: '[ローカルOCR抽出]',
+    tags: ['ローカルOCR解析']
+  };
+}
+
 /**
- * AI API全滅時の完全ローカルフォールバック用パーサー
- * OCR結果の生のテキスト文字列から正規表現で名刺の要素を抽出する
- * @param {string} rawText 
- * @returns {object}
+ * AI API全滅時の完全ローカルフォールバック用パーサー (複数枚対応)
  */
-export function parseOcrTextToCard(rawText) {
+export function parseOcrTextToCard(rawText, options = {}) {
   if (!rawText || !rawText.trim()) {
     return {
       isBusinessCard: false,
@@ -81,116 +171,41 @@ export function parseOcrTextToCard(rawText) {
     };
   }
 
-  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
-  
-  let email = '';
-  let phone = '';
-  let mobile = '';
-  let postalCode = '';
-  let address = '';
-  let website = '';
-  let company = '';
-  let name = '';
-  let title = '';
-  const remainingLines = [];
+  const allLines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+  const emails = rawText.match(emailRegex) || [];
 
-  // 正規表現パターン
-  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-  const mobileRegex = /(?:090|080|070)[-\s]?\d{4}[-\s]?\d{4}/;
-  const phoneRegex = /(?:0\d{1,4})[-\s]?\d{1,4}[-\s]?\d{3,4}/;
-  const postalRegex = /〒?\s?(\d{3}[-\s]\d{4})/;
-  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/;
-  const titleKeywords = ['代表取締役', '取締役', '社長', '部長', '課長', 'マネージャー', 'CEO', 'CTO', 'CFO', '主任', '係長', '代表'];
-  const companyKeywords = ['株式会社', '有限会社', '合同会社', '一般社団法人', 'Inc.', 'Co.', 'Ltd.'];
+  // 複数のメールアドレスまたは明確なセパレータが存在する場合、複数カードとして分割パース
+  if (options.isMultiScan || emails.length > 1) {
+    const blocks = [];
+    let currentBlock = [];
 
-  for (const line of lines) {
-    // メールアドレス検出
-    if (!email && emailRegex.test(line)) {
-      const match = line.match(emailRegex);
-      if (match) email = match[0];
-      continue;
-    }
-
-    // URL検出
-    if (!website && urlRegex.test(line)) {
-      const match = line.match(urlRegex);
-      if (match) website = match[0];
-      continue;
-    }
-
-    // 携帯電話検出
-    if (!mobile && mobileRegex.test(line)) {
-      const match = line.match(mobileRegex);
-      if (match) mobile = match[0];
-      continue;
-    }
-
-    // 固定電話検出
-    if (!phone && phoneRegex.test(line)) {
-      const match = line.match(phoneRegex);
-      if (match) phone = match[0];
-      continue;
-    }
-
-    // 郵便番号
-    if (!postalCode && postalRegex.test(line)) {
-      const match = line.match(postalRegex);
-      if (match) postalCode = match[1];
-      continue;
-    }
-
-    // 会社名
-    if (!company && companyKeywords.some(k => line.includes(k))) {
-      company = line;
-      continue;
-    }
-
-    // 役職
-    if (!title && titleKeywords.some(k => line.includes(k))) {
-      title = line;
-      continue;
-    }
-
-    // 住所パターン
-    if (!address && (line.includes('都') || line.includes('道') || line.includes('府') || line.includes('県') || line.includes('区') || line.includes('市'))) {
-      if (/\d/.test(line)) {
-        address = line;
-        continue;
+    for (const line of allLines) {
+      currentBlock.push(line);
+      // メールアドレス行が出現したらブロックを区切る
+      if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(line)) {
+        blocks.push(currentBlock);
+        currentBlock = [];
       }
     }
+    if (currentBlock.length > 0) {
+      blocks.push(currentBlock);
+    }
 
-    remainingLines.push(line);
-  }
-
-  // 残った短めの行から氏名を推測（日本語名刺の2〜4文字）
-  if (remainingLines.length > 0) {
-    for (const cand of remainingLines) {
-      const cleanCand = cand.replace(/\s+/g, '');
-      if (cleanCand.length >= 2 && cleanCand.length <= 6 && !/\d/.test(cleanCand)) {
-        name = cand;
-        break;
+    if (blocks.length > 1) {
+      const cards = blocks.map(b => parseSingleCardFromLines(b)).filter(c => c.name || c.company || c.phone || c.email);
+      if (cards.length > 0) {
+        return {
+          isBusinessCard: true,
+          cards
+        };
       }
     }
   }
 
-  if (!name && remainingLines.length > 0) {
-    name = remainingLines[0];
-  }
-
+  const single = parseSingleCardFromLines(allLines);
   return {
     isBusinessCard: true,
-    name: name || '',
-    reading: '',
-    company: company || '',
-    department: '',
-    title: title || '',
-    phone: phone || '',
-    mobile: mobile || '',
-    email: email || '',
-    postalCode: postalCode || '',
-    address: address || '',
-    website: website || '',
-    memo: `[ローカルOCRフォールバック抽出]\n${rawText.slice(0, 150)}...`,
-    tags: ['ローカルOCR解析']
+    ...single
   };
 }

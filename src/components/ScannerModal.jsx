@@ -83,7 +83,9 @@ export default function ScannerModal({
     setErrorMsg(null);
     setExtractedCards([]);
 
-    const scanOptions = { isVertical, isDesignCard, isMultiScan };
+    // 複数画像が指定されている場合も isMultiScan を有効化
+    const effectiveMultiScan = isMultiScan || imagesList.length > 1;
+    const scanOptions = { isVertical, isDesignCard, isMultiScan: effectiveMultiScan };
     const allCards = [];
     let hasError = false;
     let lastErrorReason = null;
@@ -118,8 +120,9 @@ export default function ScannerModal({
             continue;
           }
           result.cards.forEach((c) => {
+            const cleanName = (c.name || '').replace(/[(（]名刺読み取り失敗[）)]/g, '').replace(/[(（]氏名未検出[）)]/g, '').trim();
             allCards.push({
-              name: c.name || '',
+              name: cleanName,
               reading: c.reading || '',
               company: c.company || '',
               department: c.department || '',
@@ -131,7 +134,7 @@ export default function ScannerModal({
               address: c.address || '',
               website: c.website || '',
               memo: c.memo || '',
-              tags: c.tags || ['新規名刺'],
+              tags: Array.isArray(c.tags) && c.tags.length > 0 ? c.tags : ['新規名刺'],
               image: img
             });
           });
@@ -158,7 +161,7 @@ export default function ScannerModal({
             address: result.address || '',
             website: result.website || '',
             memo: result.memo || '',
-            tags: result.tags || ['新規名刺'],
+            tags: Array.isArray(result.tags) && result.tags.length > 0 ? result.tags : ['新規名刺'],
             image: img
           });
         }
