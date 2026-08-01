@@ -49,16 +49,8 @@ export function validateBusinessCardContent(text, options = {}) {
     return { isCard: true, reason: 'テキストが検出されませんでした。AIで画像直接解析を実行します。' };
   }
 
-  const cleanText = text.replace(/\s+/g, '');
-  // 文字数が極端に少なく、かつ主要な文字パターンが存在しない場合は非名刺と判定
-  if (cleanText.length < 5) {
-    const hasPhone = /\d{2,4}-\d{2,4}-\d{3,4}/.test(text);
-    const hasEmail = /@/.test(text);
-    if (!hasPhone && !hasEmail) {
-      return { isCard: false, reason: '画像内に文字または名刺情報が検出できませんでした。' };
-    }
-  }
-
+  // オンデバイスOCRで抽出された文字数が少ない場合でも、
+  // 高精度なビジョンAI (Gemini 3.6 Flash等) が直接画像を判別・抽出できるよう、事前ブロックは行わずバトンタッチする
   return { isCard: true };
 }
 
@@ -69,10 +61,11 @@ export function validateBusinessCardContent(text, options = {}) {
  * @returns {object}
  */
 export function parseOcrTextToCard(rawText) {
-  if (!rawText) {
+  if (!rawText || !rawText.trim()) {
     return {
-      isBusinessCard: true,
-      name: '（名刺読み取り失敗）',
+      isBusinessCard: false,
+      reason: 'AI接続エラーおよびオンデバイスOCRでテキストを検出できませんでした。画像をご確認ください。',
+      name: '',
       reading: '',
       company: '',
       department: '',
@@ -83,8 +76,8 @@ export function parseOcrTextToCard(rawText) {
       postalCode: '',
       address: '',
       website: '',
-      memo: 'AI接続エラーおよびローカルOCR読み取り限界のため手動入力が必要です。',
-      tags: ['ローカルOCR抽出']
+      memo: '',
+      tags: []
     };
   }
 
@@ -186,7 +179,7 @@ export function parseOcrTextToCard(rawText) {
 
   return {
     isBusinessCard: true,
-    name: name || '（氏名未検出）',
+    name: name || '',
     reading: '',
     company: company || '',
     department: '',

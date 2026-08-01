@@ -214,15 +214,16 @@ export default function ScannerModalNative({
             });
           });
         } else {
-          const hasCoreInfo = result.name || result.company || result.phone || result.mobile || result.email;
-          if (!hasCoreInfo && !result.memo?.includes('ローカルOCR')) {
+          const cleanName = (result.name || '').replace(/[(（]名刺読み取り失敗[）)]/g, '').replace(/[(（]氏名未検出[）)]/g, '').trim();
+          const hasCoreInfo = cleanName || result.company || result.phone || result.mobile || result.email;
+          if (!hasCoreInfo) {
             hasError = true;
             lastErrorReason = '選択された画像から名刺情報を検出できませんでした。名刺がはっきりと写っている画像でお試しください。';
             continue;
           }
 
           allCards.push({
-            name: result.name || '',
+            name: cleanName,
             reading: result.reading || '',
             company: result.company || '',
             department: result.department || '',
@@ -438,14 +439,24 @@ export default function ScannerModalNative({
                   </ScrollView>
                 )}
 
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-                  <CheckCircle2 size={18} color={theme.colors.accentGreen} />
-                  <Text style={{ fontSize: 13, color: theme.colors.accentGreen, fontWeight: '600', flex: 1 }}>
-                    {extractedCards.length > 1
-                      ? `${extractedCards.length} 件の名刺を抽出しました！`
-                      : 'AI解析が完了しました！内容を確認して保存してください。'}
-                  </Text>
-                </View>
+                {/* 解析結果ステータスバナー */}
+                {currentCard.name ? (
+                  <View style={styles.successBanner}>
+                    <CheckCircle2 size={18} color={theme.colors.accentGreen} />
+                    <Text style={styles.successBannerText}>
+                      {extractedCards.length > 1
+                        ? `${extractedCards.length} 件の名刺を抽出しました！`
+                        : 'AI解析が完了しました！内容を確認して保存してください。'}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.warningBanner}>
+                    <AlertCircle size={18} color="#F59E0B" />
+                    <Text style={styles.warningBannerText}>
+                      ⚠️ 氏名が自動検出されませんでした。名刺画像を確認して氏名を入力してください。
+                    </Text>
+                  </View>
+                )}
 
                 {currentCard.image && (
                   <Image source={{ uri: currentCard.image }} style={styles.previewImage} resizeMode="contain" />
@@ -732,6 +743,40 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 12,
     color: theme.colors.danger,
+    flex: 1,
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderRadius: theme.radius.md,
+    marginBottom: 16,
+  },
+  successBannerText: {
+    fontSize: 13,
+    color: theme.colors.accentGreen,
+    fontWeight: '600',
+    flex: 1,
+  },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    borderRadius: theme.radius.md,
+    marginBottom: 16,
+  },
+  warningBannerText: {
+    fontSize: 12,
+    color: '#F59E0B',
+    fontWeight: '600',
     flex: 1,
   },
   cardTabBtn: {

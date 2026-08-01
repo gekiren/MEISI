@@ -141,7 +141,7 @@ ${modeInstruction}${hintPrompt}
           { inline_data: { mime_type: mimeType, data: cleanBase64 } }
         ]
       }],
-      generationConfig: { temperature: 0.1, response_mime_type: "application/json" }
+      generationConfig: { response_mime_type: "application/json" }
     })
   });
 
@@ -151,37 +151,34 @@ ${modeInstruction}${hintPrompt}
   }
 
   const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   let cleanJson = text.trim().replace(/^```json\n?/, '').replace(/\n?```$/, '');
+  const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleanJson = jsonMatch[0];
+  }
   return JSON.parse(cleanJson);
 }
 
 async function callDeepSeekV4(base64Image, apiKey, ocrHintText = '', scanOptions = {}) {
-  let mimeType = 'image/jpeg';
-  let cleanBase64 = base64Image;
-
-  if (base64Image.includes(';base64,')) {
-    const parts = base64Image.split(';base64,');
-    mimeType = parts[0].replace('data:', '');
-    cleanBase64 = parts[1];
-  }
-
-  const hintPrompt = ocrHintText ? `\n【参考：オンデバイスOCR事前抽出テキスト】\n${ocrHintText}\n` : '';
-
   let modePrompts = [];
   if (scanOptions.isVertical) {
-    modePrompts.push('※注意【縦書きレイアウト名刺モード】: この名刺は縦書きで記載されています。文字は上から下、行は右から左の縦方向配置と意識して氏名・役職・会社名を特定してください。');
+    modePrompts.push('※注意【縦書きレイアウト名刺モード】: この名刺は縦書きで記載されています。');
   }
   if (scanOptions.isDesignCard) {
-    modePrompts.push('※注意【デザイン・カラー名刺モード】: この名刺はカラフルな背景・複雑なグラフィックノイズ・ロゴマーク・変形フォントが含まれる場合があります。背景ノイズを分離し、本来のテキスト要素を正確に検出してください。');
+    modePrompts.push('※注意【デザイン・カラー名刺モード】');
   }
   const modeInstruction = modePrompts.length > 0 ? `\n${modePrompts.join('\n')}\n` : '';
 
   const prompt = `
-名刺画像から情報を抽出してJSONで返却してください。
-画像が名刺ではない場合（エラー画面のスクリーンショット、アプリ画面、キーボード、風景、書籍など）は "isBusinessCard": false, "reason": "名刺画像を検知できませんでした。名刺がはっきりと写っている画像でお試しください。" にしてください。
-名刺の場合は "isBusinessCard": true にしてください。
-${modeInstruction}${hintPrompt}
+あなたは名刺情報の高精度解析AIです。
+以下はオンデバイスOCRで事前抽出された名刺の生テキストです。このテキストから名刺情報を抽出し、指定のJSONフォーマットで返却してください。
+${modeInstruction}
+【オンデバイスOCR事前抽出テキスト】
+${ocrHintText || '(テキスト未検出)'}
+
+テキストから名刺要素が検出できない場合は "isBusinessCard": false, "reason": "テキスト情報を検知できませんでした。" にしてください。
+検出できる場合は "isBusinessCard": true にしてください。
 
 【返却フォーマット】
 {
@@ -212,13 +209,9 @@ ${modeInstruction}${hintPrompt}
       model: 'deepseek-v4-flash',
       messages: [{
         role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          { type: 'image_url', image_url: { url: base64Image.startsWith('data:') ? base64Image : `data:${mimeType};base64,${cleanBase64}` } }
-        ]
+        content: prompt
       }],
-      response_format: { type: 'json_object' },
-      temperature: 0.1
+      response_format: { type: 'json_object' }
     })
   });
 
@@ -228,6 +221,11 @@ ${modeInstruction}${hintPrompt}
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  return JSON.parse(content.trim());
+  const content = data.choices?.[0]?.message?.content || '';
+  let cleanJson = content.trim().replace(/^```json\n?/, '').replace(/\n?```$/, '');
+  const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleanJson = jsonMatch[0];
+  }
+  return JSON.parse(cleanJson);
 }

@@ -137,15 +137,16 @@ export default function ScannerModal({
           });
         } else {
           // 単一カードの場合
-          const hasCoreInfo = result.name || result.company || result.phone || result.mobile || result.email;
-          if (!hasCoreInfo && !result.memo?.includes('ローカルOCR')) {
+          const cleanName = (result.name || '').replace(/[(（]名刺読み取り失敗[）)]/g, '').replace(/[(（]氏名未検出[）)]/g, '').trim();
+          const hasCoreInfo = cleanName || result.company || result.phone || result.mobile || result.email;
+          if (!hasCoreInfo) {
             hasError = true;
             lastErrorReason = '選択された画像から名刺情報を検出できませんでした。名刺がはっきりと写っている画像でお試しください。';
             continue;
           }
 
           allCards.push({
-            name: result.name || '',
+            name: cleanName,
             reading: result.reading || '',
             company: result.company || '',
             department: result.department || '',
@@ -495,14 +496,23 @@ export default function ScannerModal({
               </div>
             )}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10B981', fontSize: '0.85rem', marginBottom: '16px', fontWeight: '600' }}>
-              <CheckCircle2 size={18} />
-              <span>
-                {extractedCards.length > 1
-                  ? `${extractedCards.length} 件の名刺を抽出しました！各カードの内容を確認・調整してください。`
-                  : 'AI解析が完了しました！内容を確認・調整してデータベースに保存してください。'}
-              </span>
-            </div>
+            {currentCard.name ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10B981', fontSize: '0.85rem', marginBottom: '16px', fontWeight: '600', padding: '10px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px' }}>
+                <CheckCircle2 size={18} />
+                <span>
+                  {extractedCards.length > 1
+                    ? `${extractedCards.length} 件の名刺を抽出しました！各カードの内容を確認・調整してください。`
+                    : 'AI解析が完了しました！内容を確認・調整してデータベースに保存してください。'}
+                </span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#F59E0B', fontSize: '0.85rem', marginBottom: '16px', fontWeight: '600', padding: '10px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px' }}>
+                <AlertCircle size={18} />
+                <span>
+                  ⚠️ 氏名が自動検出されませんでした。名刺画像を確認して氏名を入力してください。
+                </span>
+              </div>
+            )}
 
             {currentCard.image && (
               <img src={currentCard.image} alt="名刺プレビュー" className="scanned-preview-img" style={{ maxHeight: '180px', objectFit: 'contain', width: '100%', marginBottom: '16px' }} />

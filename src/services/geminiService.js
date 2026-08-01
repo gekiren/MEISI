@@ -111,7 +111,6 @@ ${modeInstruction}${hintPrompt}
       }
     ],
     generationConfig: {
-      temperature: 0.1,
       response_mime_type: "application/json"
     }
   };
@@ -141,6 +140,12 @@ ${modeInstruction}${hintPrompt}
     cleanJsonStr = cleanJsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
   } else if (cleanJsonStr.startsWith('```')) {
     cleanJsonStr = cleanJsonStr.replace(/^```\n?/, '').replace(/\n?```$/, '');
+  }
+
+  // もし前後に説明文が含まれている場合に備え、最外周の JSON ブロック ({ ... }) を抽出
+  const jsonMatch = cleanJsonStr.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleanJsonStr = jsonMatch[0];
   }
 
   return JSON.parse(cleanJsonStr);
