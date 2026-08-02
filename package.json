@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
+    "@react-native-ml-kit/text-recognition": "^2.0.0",
     "canvas-confetti": "^1.9.4",
     "dexie": "^4.4.4",
     "expo": "~57.0.7",

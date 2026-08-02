@@ -144,8 +144,8 @@ ${modeInstruction}${hintPrompt}
 あなたは名刺情報の高精度解析AIです。添付された名刺画像から、記載されている情報を正確に抽出して指定のJSONフォーマットで返却してください。
 ${modeInstruction}${hintPrompt}
 余計な説明やMarkdown修飾は含めず、純粋なJSONオブジェクトのみを出力してください。
-添付画像が名刺ではない場合（エラー画面のスクリーンショット、アプリ画面、キーボード、風景、書籍、名刺と無関係な写真など）、"isBusinessCard": false, "reason": "名刺画像を検知できませんでした。名刺がはっきりと写っている画像でお試しください。" にし、各項目は空文字 "" にしてください。
-判別できる名刺の場合は "isBusinessCard": true にしてください。
+画像内に氏名、会社名、役職、電話番号、メールアドレス、住所等の名刺要素が一部でも確認できる場合は、必ず "isBusinessCard": true にし、読み取れる情報を可能な限り全て抽出してください。
+名刺と完全に無関係な画像（純粋な風景写真、黒無地、キーボード単体など）の場合のみ "isBusinessCard": false にしてください。
 
 【返却フォーマット】
 {
@@ -166,8 +166,8 @@ ${modeInstruction}${hintPrompt}
 }
 `;
 
-  // モデル名のフォールバックリスト (gemini-3.6-flash -> gemini-1.5-flash)
-  const candidateModels = ['gemini-3.6-flash', 'gemini-1.5-flash'];
+  // モデル名のフォールバックリスト (gemini-3.6-flash -> gemini-2.5-flash -> gemini-2.0-flash -> gemini-1.5-flash)
+  const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
   let lastError = null;
 
   for (const modelName of candidateModels) {
