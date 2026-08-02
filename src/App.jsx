@@ -8,15 +8,29 @@ import { getAllCards, updateCard, addCard } from './db/db';
 import { exportCardsToCSV } from './services/csvService';
 import { DEFAULT_WORKER_PROXY_URL } from './config/constants';
 import { PhoneIncoming, ShieldCheck, Sparkles, Server } from 'lucide-react';
+import { safeStorage } from './utils/storage';
 
 export default function App() {
   const [cards, setCards] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState(null);
 
-  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
-  const [deepSeekApiKey, setDeepSeekApiKey] = useState(() => localStorage.getItem('deepseek_api_key') || '');
-  const [workerProxyUrl, setWorkerProxyUrl] = useState(() => localStorage.getItem('worker_proxy_url') || DEFAULT_WORKER_PROXY_URL);
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [deepSeekApiKey, setDeepSeekApiKey] = useState('');
+  const [workerProxyUrl, setWorkerProxyUrl] = useState(DEFAULT_WORKER_PROXY_URL);
+
+  // AsyncStorage から設定の初期ロード
+  useEffect(() => {
+    async function loadSettings() {
+      const gKey = await safeStorage.getItem('gemini_api_key');
+      const dKey = await safeStorage.getItem('deepseek_api_key');
+      const pUrl = await safeStorage.getItem('worker_proxy_url');
+      if (gKey) setGeminiApiKey(gKey);
+      if (dKey) setDeepSeekApiKey(dKey);
+      if (pUrl) setWorkerProxyUrl(pUrl);
+    }
+    loadSettings();
+  }, []);
 
   // モーダル制御ステート
   const [isScanOpen, setIsScanOpen] = useState(false);
@@ -91,13 +105,13 @@ export default function App() {
     }
   };
 
-  const handleSaveApiKeys = (geminiKey, deepSeekKey, proxyUrl) => {
+  const handleSaveApiKeys = async (geminiKey, deepSeekKey, proxyUrl) => {
     setGeminiApiKey(geminiKey);
     setDeepSeekApiKey(deepSeekKey);
     setWorkerProxyUrl(proxyUrl || DEFAULT_WORKER_PROXY_URL);
-    localStorage.setItem('gemini_api_key', geminiKey);
-    localStorage.setItem('deepseek_api_key', deepSeekKey);
-    localStorage.setItem('worker_proxy_url', proxyUrl || DEFAULT_WORKER_PROXY_URL);
+    await safeStorage.setItem('gemini_api_key', geminiKey);
+    await safeStorage.setItem('deepseek_api_key', deepSeekKey);
+    await safeStorage.setItem('worker_proxy_url', proxyUrl || DEFAULT_WORKER_PROXY_URL);
   };
 
   const handleToggleFavorite = async (card) => {

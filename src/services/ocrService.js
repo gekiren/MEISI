@@ -1,12 +1,41 @@
 import { createWorker } from 'tesseract.js';
 
+// Native環境専用 Google ML Kit の動的セーフティインポート
+let TextRecognition = null;
+try {
+  TextRecognition = require('@react-native-ml-kit/text-recognition').default;
+} catch (e) {
+  // Webビルド環境では無視
+}
+
 /**
- * オンデバイス（ブラウザ内WebAssembly）でローカルOCRを実行
- * @param {string} base64Image - 画像のBase64文字列
- * @param {function} onProgress - 進捗コールバック (0〜100%)
+ * オンデバイス（Google ML Kit / Tesseract）で爆速ローカルOCRを実行
+ * @param {string} imageUriOrBase64 - 画像のURIまたはBase64文字列
+ * @param {function} onProgress - 進捗コールバック
  * @returns {Promise<{ text: string, confidence: number }>}
  */
-export async function extractTextWithLocalOCR(base64Image, onProgress) {
+export async function extractTextWithLocalOCR(imageUriOrBase64, onProgress) {
+  // 1. React Native (Android / iOS) 環境: Google ML Kit オンデバイスOCR (爆速 50ms)
+  try {
+    if (TextRecognition && typeof TextRecognition.recognize === 'function') {
+      if (onProgress) onProgress('Google ML Kit で爆速オンデバイスOCR処理中...');
+      let cleanUri = imageUriOrBase64;
+      if (cleanUri && !cleanUri.startsWith('file://') && !cleanUri.startsWith('content://') && !cleanUri.startsWith('data:')) {
+        cleanUri = `file://${cleanUri}`;
+      }
+      const result = await TextRecognition.recognize(cleanUri);
+      if (result && result.text) {
+        return {
+          text: result.text || '',
+          confidence: 0.95
+        };
+      }
+    }
+  } catch (mlKitErr) {
+    console.warn('Google ML Kit OCR failed, falling back to WebAssembly OCR:', mlKitErr);
+  }
+
+  // 2. Web / ブラウザ環境フォールバック (Tesseract.js)
   try {
     const worker = await createWorker('jpn+eng', 1, {
       logger: (m) => {
@@ -17,7 +46,7 @@ export async function extractTextWithLocalOCR(base64Image, onProgress) {
       }
     });
 
-    const { data } = await worker.recognize(base64Image);
+    const { data } = await worker.recognize(imageUriOrBase64);
     await worker.terminate();
 
     return {
@@ -26,7 +55,6 @@ export async function extractTextWithLocalOCR(base64Image, onProgress) {
     };
   } catch (err) {
     console.warn('Local OCR execution failed:', err);
-    // OCR処理エラー時はフォールバック用に空結果を返す
     return { text: '', confidence: 0 };
   }
 }
@@ -148,13 +176,44 @@ export function parseSingleCardFromLines(lines) {
 }
 
 /**
+ * オンデバイスOCRの抽出テキストが意味のある情報かノイズかを判定
+ * @param {string} text - OCR抽出テキスト
+ * @returns {boolean}
+ */
+export function isOcrTextValid(text) {
+  if (!text || typeof text !== 'string') return false;
+  const clean = text.replace(/\s+/g, '');
+  if (clean.length < 4) return false;
+
+  // メールアドレス、電話番号、郵便番号の検知
+  const hasEmail = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(clean);
+  const hasPhone = /(?:0\d{1,4})[-\s]?\d{1,4}[-\s]?\d{3,4}/.test(clean);
+  const hasPostal = /〒?\s?\d{3}[-\s]\d{4}/.test(clean);
+  if (hasEmail || hasPhone || hasPostal) return true;
+
+  // 会社名・組織・役職などのキーワード検知
+  const keywords = ['株式会社', '有限会社', '合同会社', '一般社団法人', '代表', '取締役', '社長', '部長', '課長', 'マネージャー', 'TEL', 'FAX', 'EMAIL', '〒'];
+  if (keywords.some(k => clean.includes(k))) return true;
+
+  // 漢字・ひらがな・カタカナの意味のある日本語文字が一定以上含まれているか
+  const japaneseChars = clean.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/g) || [];
+  if (japaneseChars.length >= 4) return true;
+
+  // 意味のある英単語（3文字以上）が一定数含まれているか
+  const englishWords = clean.match(/[a-zA-Z]{3,}/g) || [];
+  if (englishWords.length >= 2) return true;
+
+  return false;
+}
+
+/**
  * AI API全滅時の完全ローカルフォールバック用パーサー (複数枚対応)
  */
 export function parseOcrTextToCard(rawText, options = {}) {
-  if (!rawText || !rawText.trim()) {
+  if (!rawText || !rawText.trim() || !isOcrTextValid(rawText)) {
     return {
       isBusinessCard: false,
-      reason: 'AI接続エラーおよびオンデバイスOCRでテキストを検出できませんでした。画像をご確認ください。',
+      reason: 'AI解析に失敗し、かつ画像から文字情報を検知できませんでした。鮮明な画像で撮影し直すか、手動入力をお試しください。',
       name: '',
       reading: '',
       company: '',

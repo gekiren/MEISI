@@ -50,31 +50,46 @@ export default function ScannerModalNative({
   // 画像URI/Base64をAI送信用Base64へ安全にオンデマンド変換 (ガード付き)
   const ensureBase64Image = async (imageUri) => {
     if (!imageUri) throw new Error('画像データが存在しません。');
-    if (imageUri.startsWith('data:image')) {
+    if (typeof imageUri === 'string' && imageUri.startsWith('data:image')) {
       return imageUri;
     }
 
+    let targetUri = imageUri;
+
+    // Base64がプレフィックスなしで直接渡されている場合
+    if (!targetUri.startsWith('file://') && !targetUri.startsWith('content://') && !targetUri.startsWith('/') && targetUri.length > 200) {
+      return `data:image/jpeg;base64,${targetUri}`;
+    }
+
     try {
-      let cleanUri = imageUri;
-      if (!cleanUri.startsWith('file://') && !cleanUri.startsWith('content://') && cleanUri.startsWith('/')) {
-        cleanUri = `file://${cleanUri}`;
+      if (!targetUri.startsWith('file://') && !targetUri.startsWith('content://') && targetUri.startsWith('/')) {
+        targetUri = `file://${targetUri}`;
       }
-      const base64Str = await FileSystem.readAsStringAsync(cleanUri, {
+
+      const base64Str = await FileSystem.readAsStringAsync(targetUri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      if (base64Str && base64Str.length > 100) {
-        return `data:image/jpeg;base64,${base64Str}`;
+
+      if (base64Str && base64Str.length > 50) {
+        return `data:image/jpeg;base64,${base64Str.replace(/\s+/g, '')}`;
       }
     } catch (err) {
-      console.warn('FileSystem.readAsStringAsync failed:', err);
+      console.warn('FileSystem.readAsStringAsync first attempt failed:', err);
+      // 再試行: URI エンコード解除または代替読み込み
+      try {
+        const decodedUri = decodeURIComponent(targetUri);
+        const base64Str = await FileSystem.readAsStringAsync(decodedUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        if (base64Str && base64Str.length > 50) {
+          return `data:image/jpeg;base64,${base64Str.replace(/\s+/g, '')}`;
+        }
+      } catch (retryErr) {
+        console.error('FileSystem.readAsStringAsync retry failed:', retryErr);
+      }
     }
 
-    // パス文字列がそのまま残っている場合はAI送信を即座に安全ガード
-    if (imageUri.startsWith('file://') || imageUri.startsWith('content://') || imageUri.startsWith('/')) {
-      throw new Error('画像の読み込みに失敗しました。端末の設定または画像パーミッションをご確認ください。');
-    }
-
-    return `data:image/jpeg;base64,${imageUri}`;
+    throw new Error('画像の読み込みに失敗しました。端末のストレージ権限をご確認の上、再撮影をお試しください。');
   };
 
   // 画像選択/撮影後の処理分岐 (複数枚の場合: 一括撮影モード vs 連続撮影モード)
@@ -145,11 +160,22 @@ export default function ScannerModalNative({
 
         if (aborted) break;
 
-        const result = await ImagePicker.launchCameraAsync({
-          allowsEditing: false, // Android ブラックアウト防止のため false を維持
-          quality: 0.85,
-          base64: true,
-        });
+        let result = null;
+        try {
+          result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true, // 撮影後の名刺トリミング（切り抜き）を有効化
+            aspect: [3, 2],       // 名刺の標準アスペクト比
+            quality: 0.65,        // データ量最適化
+            base64: true,
+          });
+        } catch (cropErr) {
+          console.warn('Sequential cropped camera launch failed, retrying without crop:', cropErr);
+          result = await ImagePicker.launchCameraAsync({
+            allowsEditing: false,
+            quality: 0.65,
+            base64: true,
+          });
+        }
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
           const asset = result.assets[0];
@@ -249,11 +275,23 @@ export default function ScannerModalNative({
         return;
       }
 
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: false, // Android でのブラックアウト防止のため false に変更
-        quality: 0.85,
-        base64: true,
-      });
+      let result = null;
+      try {
+        result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true, // 撮影後の名刺トリミング（切り抜き）を有効化
+          aspect: [3, 2],       // 名刺の標準アスペクト比
+          quality: 0.65,        // 解像度・データ量の最適化
+          base64: true,
+        });
+      } catch (cropErr) {
+        console.warn('Cropped camera launch failed, retrying without crop:', cropErr);
+        // トリミング画面で例外が発生した場合のセーフティフォールバック（通常撮影）
+        result = await ImagePicker.launchCameraAsync({
+          allowsEditing: false,
+          quality: 0.65,
+          base64: true,
+        });
+      }
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setIsAnalyzing(true);
@@ -317,7 +355,9 @@ export default function ScannerModalNative({
           scanOptions
         );
 
-        if (result.isBusinessCard === false) {
+        const hasAnyField = result && (result.name || result.company || result.phone || result.mobile || result.email || result.address);
+
+        if (result.isBusinessCard === false && !hasAnyField) {
           hasError = true;
           lastErrorReason = result.reason || '選択された画像から名刺情報を検出できませんでした。名刺がはっきりと写っている画像でお試しください。';
           continue;
@@ -602,14 +642,37 @@ export default function ScannerModalNative({
               </View>
             )}
 
-            {/* エラーメッセージ */}
+            {/* エラーメッセージ & 診断結果画面 */}
             {errorMsg && (
               <View style={styles.errorBox}>
-                <AlertCircle size={18} color={theme.colors.danger} style={{ marginRight: 8 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.errorText}>{errorMsg}</Text>
-                  <TouchableOpacity style={styles.retryBtn} onPress={handleReset}>
-                    <Text style={styles.retryBtnText}>↻ 撮影・画像をやり直す</Text>
+                {selectedImages.length > 0 && (
+                  <View style={{ marginBottom: 12, alignItems: 'center' }}>
+                    <Image
+                      source={{ uri: selectedImages[0] }}
+                      style={{ width: 140, height: 90, borderRadius: theme.radius.md, borderBottomWidth: 2, borderColor: theme.colors.danger }}
+                      resizeMode="cover"
+                    />
+                    <Text style={{ fontSize: 11, color: theme.colors.textMuted, marginTop: 4 }}>解析対象画像</Text>
+                  </View>
+                )}
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 }}>
+                  <AlertCircle size={22} color={theme.colors.danger} style={{ marginRight: 8, marginTop: 2 }} />
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.danger, flex: 1 }}>
+                    テキスト情報の抽出に失敗しました
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', padding: 12, borderRadius: theme.radius.md, marginBottom: 16 }}>
+                  <Text style={[styles.errorText, { color: '#FCA5A5', fontSize: 13, lineHeight: 18 }]}>{errorMsg}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  <TouchableOpacity style={[styles.retryBtn, { flex: 1, backgroundColor: theme.colors.accentPrimary }]} onPress={launchCameraWithGridCrop}>
+                    <Text style={[styles.retryBtnText, { color: '#FFF', fontWeight: '700' }]}>📷 再撮影する</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.retryBtn, { flex: 1, backgroundColor: 'rgba(255, 255, 255, 0.1)' }]} onPress={pickImagesFromGallery}>
+                    <Text style={[styles.retryBtnText, { color: theme.colors.textMain }]}>🖼 ギャラリー選択</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.retryBtn, { flex: 1, backgroundColor: 'rgba(255, 255, 255, 0.05)' }]} onPress={handleReset}>
+                    <Text style={[styles.retryBtnText, { color: theme.colors.textMuted }]}>↺ リセット</Text>
                   </TouchableOpacity>
                 </View>
               </View>

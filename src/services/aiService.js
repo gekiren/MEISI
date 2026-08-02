@@ -1,6 +1,6 @@
 import { analyzeBusinessCardWithGemini } from './geminiService';
 import { DEFAULT_WORKER_PROXY_URL } from '../config/constants';
-import { extractTextWithLocalOCR, validateBusinessCardContent, parseOcrTextToCard } from './ocrService';
+import { extractTextWithLocalOCR, validateBusinessCardContent, parseOcrTextToCard, isOcrTextValid } from './ocrService';
 
 /**
  * DeepSeek V4 API (OpenAI互換) による名刺画像・テキスト構造化サービス
@@ -152,8 +152,9 @@ export async function analyzeBusinessCardWithFallback(
   onFallbackNotice,
   scanOptions = {}
 ) {
-  // Step 1: オンデバイス（ローカルWebAssembly）OCR による事前検証 (タイムアウト1.5秒でAI優先)
+  // Step 1: 高速オンデバイスOCR (Google ML Kit / Tesseract) の実行
   let ocrResult = { text: '', confidence: 0 };
+  let ocrErrorDetail = '';
   try {
     if (onFallbackNotice) {
       const modeLabel = [
@@ -161,38 +162,46 @@ export async function analyzeBusinessCardWithFallback(
         scanOptions.isDesignCard ? 'デザイン名刺' : ''
       ].filter(Boolean).join(' & ');
       const modeText = modeLabel ? ` (${modeLabel}モード)` : '';
-      onFallbackNotice(`AI解析を準備中${modeText}...`);
+      onFallbackNotice(`Google ML Kit & Gemini 3.6 で解析中${modeText}...`);
     }
 
-    const ocrPromise = extractTextWithLocalOCR(base64Image, (progressMsg) => {
-      if (onFallbackNotice) onFallbackNotice(progressMsg);
+    // Google ML Kit の高速検出 (約50ms)
+    ocrResult = await extractTextWithLocalOCR(base64Image, (msg) => {
+      if (onFallbackNotice) onFallbackNotice(msg);
+    }).catch((err) => {
+      ocrErrorDetail = err.message || String(err);
+      return { text: '', confidence: 0 };
     });
-    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ text: '', confidence: 0 }), 1500));
-
-    ocrResult = await Promise.race([ocrPromise, timeoutPromise]);
-
-    const guardCheck = validateBusinessCardContent(ocrResult.text, scanOptions);
-    if (!guardCheck.isCard) {
-      return {
-        isBusinessCard: false,
-        reason: guardCheck.reason
-      };
-    }
   } catch (ocrErr) {
-    console.warn('Pre-OCR execution error, proceeding directly to AI:', ocrErr);
+    ocrErrorDetail = ocrErr.message || String(ocrErr);
+    console.warn('Pre-OCR execution error, proceeding directly to Vision AI:', ocrErr);
   }
+
+  const ocrCharCount = ocrResult.text ? ocrResult.text.trim().length : 0;
+  const ocrSummary = ocrCharCount > 0 
+    ? `ローカルOCR文字認識: ${ocrCharCount}文字検出 ("${ocrResult.text.trim().substring(0, 30)}...")`
+    : `ローカルOCR文字認識: 0文字検出 (画像がぼやけているか文字が小さすぎる可能性があります)`;
 
   // Step 2: AI解析 (Workerプロキシ → Gemini 3.6 Flash → DeepSeek V4)
   const activeProxyUrl = workerProxyUrl || DEFAULT_WORKER_PROXY_URL;
+
+  let lastProxyErrMessage = '';
+  let lastGeminiErrMessage = '';
+  let lastDeepSeekErrMessage = '';
 
   // 事前組込み済みの Worker プロキシ URL を優先使用
   if (activeProxyUrl) {
     try {
       console.log('Using pre-configured Cloudflare Worker Proxy:', activeProxyUrl);
       if (onFallbackNotice) onFallbackNotice('組み込み Cloudflare Worker プロキシ経由で AI 解析中 (Gemini 3.6 Flash ⇄ DeepSeek V4)...');
-      return await analyzeCardWithWorkerProxy(base64Image, activeProxyUrl, ocrResult.text, scanOptions);
+      const proxyResult = await analyzeCardWithWorkerProxy(base64Image, activeProxyUrl, ocrResult.text, scanOptions);
+      if (proxyResult && proxyResult.isBusinessCard === false && !proxyResult.reason?.includes('【詳細原因】')) {
+        proxyResult.reason = `${proxyResult.reason || 'テキスト情報を検知できませんでした。'}\n\n【詳細原因・診断情報】\n・${ocrSummary}\n・Cloudflare Workerプロキシ経由で解析実行完了`;
+      }
+      return proxyResult;
     } catch (proxyError) {
       console.warn('Pre-configured Cloudflare Worker Proxy failed, attempting direct API keys if provided:', proxyError);
+      lastProxyErrMessage = proxyError.message || String(proxyError);
     }
   }
 
@@ -201,18 +210,28 @@ export async function analyzeBusinessCardWithFallback(
     try {
       console.log('Attempting analysis directly with Gemini 3.6 Flash...');
       if (onFallbackNotice) onFallbackNotice('Gemini 3.6 Flash で名刺情報を解析中...');
-      return await analyzeBusinessCardWithGemini(base64Image, geminiApiKey, 'gemini-3.6-flash', ocrResult.text, scanOptions);
+      const geminiRes = await analyzeBusinessCardWithGemini(base64Image, geminiApiKey, 'gemini-3.6-flash', ocrResult.text, scanOptions);
+      if (geminiRes && geminiRes.isBusinessCard === false && !geminiRes.reason?.includes('【詳細原因】')) {
+        geminiRes.reason = `${geminiRes.reason || 'テキスト情報を検知できませんでした。'}\n\n【詳細原因・診断情報】\n・${ocrSummary}\n・Gemini 3.6 Flash API経由で解析完了`;
+      }
+      return geminiRes;
     } catch (geminiError) {
       console.warn('Gemini 3.6 Flash direct API failed or congested:', geminiError);
+      lastGeminiErrMessage = geminiError.message || String(geminiError);
 
       if (deepSeekApiKey) {
         if (onFallbackNotice) {
           onFallbackNotice(`Gemini 3.6 Flash 混雑のため、DeepSeek V4 API に自動切り替えして解析中...`);
         }
         try {
-          return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash', ocrResult.text, scanOptions);
+          const dsRes = await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash', ocrResult.text, scanOptions);
+          if (dsRes && dsRes.isBusinessCard === false && !dsRes.reason?.includes('【詳細原因】')) {
+            dsRes.reason = `${dsRes.reason || 'テキスト情報を検知できませんでした。'}\n\n【詳細原因・診断情報】\n・${ocrSummary}\n・DeepSeek V4 API経由で解析完了`;
+          }
+          return dsRes;
         } catch (deepSeekError) {
           console.warn('DeepSeek V4 API failed:', deepSeekError);
+          lastDeepSeekErrMessage = deepSeekError.message || String(deepSeekError);
         }
       }
     }
@@ -222,19 +241,40 @@ export async function analyzeBusinessCardWithFallback(
   if (deepSeekApiKey) {
     try {
       if (onFallbackNotice) onFallbackNotice('DeepSeek V4 で名刺情報を直接解析中...');
-      return await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash', ocrResult.text, scanOptions);
+      const dsRes = await analyzeBusinessCardWithDeepSeek(base64Image, deepSeekApiKey, 'deepseek-v4-flash', ocrResult.text, scanOptions);
+      if (dsRes && dsRes.isBusinessCard === false && !dsRes.reason?.includes('【詳細原因】')) {
+        dsRes.reason = `${dsRes.reason || 'テキスト情報を検知できませんでした。'}\n\n【詳細原因・診断情報】\n・${ocrSummary}\n・DeepSeek V4 API経由で解析完了`;
+      }
+      return dsRes;
     } catch (deepSeekError) {
       console.warn('DeepSeek V4 API failed:', deepSeekError);
+      lastDeepSeekErrMessage = deepSeekError.message || String(deepSeekError);
     }
   }
 
   // Step 3: AI APIが全て使えない場合の「完全ローカルOCRフォールバック」
   console.warn('All AI APIs failed or unreachable. Falling back to local OCR parsing.');
-  if (onFallbackNotice) {
-    onFallbackNotice('AI API接続不可のため、オンデバイスOCR（オフライン解析）で自動抽出中...');
+
+  if (isOcrTextValid(ocrResult.text)) {
+    if (onFallbackNotice) {
+      onFallbackNotice('AI API接続不可のため、オンデバイスOCR（オフライン解析）で自動抽出中...');
+    }
+    const localCardData = parseOcrTextToCard(ocrResult.text, scanOptions);
+    return localCardData;
   }
 
-  const localCardData = parseOcrTextToCard(ocrResult.text, scanOptions);
-  return localCardData;
+  // エラー原因を抽象化せず、詳細な診断結果・原因内訳を返却
+  const diagList = [
+    `・${ocrSummary}`,
+    lastProxyErrMessage ? `・Cloudflare Worker通信: ${lastProxyErrMessage}` : '',
+    lastGeminiErrMessage ? `・Gemini 3.6 API通信: ${lastGeminiErrMessage}` : '',
+    lastDeepSeekErrMessage ? `・DeepSeek V4 API通信: ${lastDeepSeekErrMessage}` : '',
+    ocrErrorDetail ? `・ML Kit OCRエラー: ${ocrErrorDetail}` : ''
+  ].filter(Boolean).join('\n');
+
+  return {
+    isBusinessCard: false,
+    reason: `テキスト情報を検知できませんでした。\n\n【エラー詳細・原因内訳】\n${diagList}\n\n💡 対策: 明るい場所で名刺を大きく水平に撮影し直すか、手動での入力をお試しください。`
+  };
 }
 
