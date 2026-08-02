@@ -387,14 +387,15 @@ export default function ScannerModal({
 
             {isMultiScan && (
               <div style={{
-                marginBottom: '16px',
+                marginTop: '10px',
+                marginBottom: '10px',
                 padding: '10px',
-                background: 'rgba(99, 102, 241, 0.08)',
-                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                borderRadius: '8px',
                 border: '1px solid rgba(99, 102, 241, 0.2)'
               }}>
                 <div style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                  複数枚の範囲指定モード:
+                  撮影モードの選択:
                 </div>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button
