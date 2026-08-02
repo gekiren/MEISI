@@ -501,7 +501,7 @@ export default function ScannerModalNative({
                   </TouchableOpacity>
                 </View>
 
-                {/* 複数枚スキャン時の範囲指定方法選択 */}
+                {/* 複数枚スキャン時のモード選択 */}
                 {isMultiScan && (
                   <View style={{
                     marginBottom: 16,
@@ -512,13 +512,13 @@ export default function ScannerModalNative({
                     borderColor: 'rgba(99, 102, 241, 0.2)'
                   }}>
                     <Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.textMuted, marginBottom: 6 }}>
-                      複数枚の範囲指定モード:
+                      撮影モードの選択:
                     </Text>
                     <View style={{ flexDirection: 'row', gap: 6 }}>
                       <TouchableOpacity
                         style={{
                           flex: 1,
-                          paddingVertical: 6,
+                          paddingVertical: 8,
                           paddingHorizontal: 8,
                           borderRadius: theme.radius.sm,
                           backgroundColor: multiCropMode === 'ai' ? theme.colors.accentPrimary : 'transparent',
@@ -529,14 +529,14 @@ export default function ScannerModalNative({
                         onPress={() => setMultiCropMode('ai')}
                       >
                         <Text style={{ fontSize: 11, fontWeight: '600', color: multiCropMode === 'ai' ? '#FFF' : theme.colors.textMuted }}>
-                          🤖 AIに任せる (自動分割)
+                          📷 一括撮影モード
                         </Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
                         style={{
                           flex: 1,
-                          paddingVertical: 6,
+                          paddingVertical: 8,
                           paddingHorizontal: 8,
                           borderRadius: theme.radius.sm,
                           backgroundColor: multiCropMode === 'manual' ? theme.colors.accentPrimary : 'transparent',
@@ -547,7 +547,7 @@ export default function ScannerModalNative({
                         onPress={() => setMultiCropMode('manual')}
                       >
                         <Text style={{ fontSize: 11, fontWeight: '600', color: multiCropMode === 'manual' ? '#FFF' : theme.colors.textMuted }}>
-                          ✂️ 1枚ずつ手動指定
+                          📸 連続撮影モード
                         </Text>
                       </TouchableOpacity>
                     </View>
