@@ -28,6 +28,7 @@ export default function ScannerModalNative({
   const [isMultiScan, setIsMultiScan] = useState(false);
   const [isVertical, setIsVertical] = useState(false);
   const [isDesignCard, setIsDesignCard] = useState(false);
+  const [multiCropMode, setMultiCropMode] = useState('ai'); // 'ai' | 'manual'
 
   useEffect(() => {
     if (!isOpen) {
@@ -43,6 +44,7 @@ export default function ScannerModalNative({
     setIsAnalyzing(false);
     setStatusNotice(null);
     setNewTagInput('');
+    setMultiCropMode('ai');
   };
 
   // 画像URI/Base64をAI送信用Base64へ安全にオンデマンド変換 (ガード付き)
@@ -75,8 +77,127 @@ export default function ScannerModalNative({
     return `data:image/jpeg;base64,${imageUri}`;
   };
 
+  // 画像選択/撮影後の処理分岐 (複数枚の場合: AIにおまかせ vs 1枚ずつ手動)
+  const processImagesWithChoice = async (imagesList) => {
+    if (imagesList.length === 0) return;
+
+    // 1枚のみ、または「AIに任せる」設定の場合は即座に解析へ
+    if (imagesList.length === 1 || multiCropMode === 'ai') {
+      setSelectedImages(imagesList);
+      setErrorMsg(null);
+      startBatchAnalysis(imagesList);
+      return;
+    }
+
+    // 複数枚で「手動で範囲調整」モードの場合はダイアログで最終確認
+    Alert.alert(
+      '複数枚の処理方法',
+      `${imagesList.length} 枚の画像を選択中です。\n\n手動範囲指定モードが選択されています。選択済み画像をそのままAI解析に使用しますか？\nまたは、カメラで1枚ずつ撮影＋範囲指定に切り替えますか？`,
+      [
+        {
+          text: '📷 カメラで1枚ずつ撮影',
+          onPress: () => launchSequentialCameraWithCrop(imagesList.length)
+        },
+        {
+          text: '🤖 そのままAI解析',
+          onPress: () => {
+            setSelectedImages(imagesList);
+            setErrorMsg(null);
+            startBatchAnalysis(imagesList);
+          }
+        }
+      ]
+    );
+  };
+
+  // 手動モード: カメラで1枚ずつ順次撮影（allowsEditing: false でブラックアウト防止）
+  const launchSequentialCameraWithCrop = async (totalCount) => {
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('アクセス権限が必要', '撮影するにはカメラへのアクセス許可が必要です。');
+        return;
+      }
+
+      const capturedList = [];
+      let aborted = false;
+
+      for (let i = 0; i < totalCount; i++) {
+        if (aborted) break;
+
+        await new Promise((resolve) => {
+          Alert.alert(
+            `名刺 ${i + 1} / ${totalCount} 枚目を撮影`,
+            'カメラが起動します。名刺全体が収まるように撮影してください。',
+            [
+              { text: 'カメラを起動', onPress: resolve },
+              {
+                text: 'スキップ',
+                style: 'cancel',
+                onPress: () => {
+                  aborted = true;
+                  resolve();
+                }
+              }
+            ]
+          );
+        });
+
+        if (aborted) break;
+
+        const result = await ImagePicker.launchCameraAsync({
+          allowsEditing: false, // Android ブラックアウト防止のため false を維持
+          quality: 0.85,
+          base64: true,
+        });
+
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          const img = asset.base64
+            ? `data:image/jpeg;base64,${asset.base64}`
+            : asset.uri;
+          capturedList.push(img);
+        } else {
+          // 撮影キャンセル時: 撮影済みがあればそのまま解析へ、なければ終了
+          aborted = true;
+        }
+      }
+
+      // 1枚でも撮影できていれば必ずAI解析へ
+      if (capturedList.length > 0) {
+        setSelectedImages(capturedList);
+        setErrorMsg(null);
+        startBatchAnalysis(capturedList);
+      }
+    } catch (err) {
+      console.warn('Sequential camera error:', err);
+      Alert.alert('エラー', 'カメラ撮影中にエラーが発生しました。');
+    }
+  };
+
+  // 手動モードで枚数を先に選んでカメラ起動（カメラボタンから直接）
+  const launchManualMultiCamera = () => {
+    Alert.alert(
+      '撮影枚数を選択',
+      '何枚の名刺を撮影しますか？\n（最大4枚）',
+      [
+        { text: '1枚', onPress: () => launchSequentialCameraWithCrop(1) },
+        { text: '2枚', onPress: () => launchSequentialCameraWithCrop(2) },
+        { text: '3枚', onPress: () => launchSequentialCameraWithCrop(3) },
+        { text: '4枚', onPress: () => launchSequentialCameraWithCrop(4) },
+        { text: 'キャンセル', style: 'cancel' },
+      ]
+    );
+  };
+
   // ギャラリーから画像を選択 (Expo ImagePicker - base64: true, quality: 0.75)
   const pickImagesFromGallery = async () => {
+    // 手動モード x 複数枚 の場合はカメラ順次撮影フローへ誘導
+    if (isMultiScan && multiCropMode === 'manual') {
+      launchManualMultiCamera();
+      return;
+    }
+
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult.granted) {
@@ -105,9 +226,7 @@ export default function ScannerModalNative({
           return asset.uri;
         }).filter(Boolean);
 
-        setSelectedImages(images);
-        setErrorMsg(null);
-        startBatchAnalysis(images);
+        processImagesWithChoice(images);
       }
     } catch (err) {
       console.error('Pick image error:', err);
@@ -115,8 +234,14 @@ export default function ScannerModalNative({
     }
   };
 
-  // グリッド線ガイド付きの範囲調整カメラ撮影 (4点指定ではなく格子状矩形調整)
+  // 高画質カメラ撮影 (手動モード時は順次カメラ起動、通常モードは allowsEditing: false で安全起動)
   const launchCameraWithGridCrop = async () => {
+    // 手動モード x 複数枚 の場合は順次カメラ撮影フローへ
+    if (isMultiScan && multiCropMode === 'manual') {
+      launchManualMultiCamera();
+      return;
+    }
+
     try {
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       if (!permissionResult.granted) {
@@ -125,8 +250,7 @@ export default function ScannerModalNative({
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: isVertical ? [2, 3] : [3, 2],
+        allowsEditing: false, // Android でのブラックアウト防止のため false に変更
         quality: 0.85,
         base64: true,
       });
@@ -376,6 +500,59 @@ export default function ScannerModalNative({
                     <Text style={styles.optionText}>🎨 デザイン・{'\n'}カラー名刺</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* 複数枚スキャン時の範囲指定方法選択 */}
+                {isMultiScan && (
+                  <View style={{
+                    marginBottom: 16,
+                    padding: 10,
+                    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                    borderRadius: theme.radius.md,
+                    borderWidth: 1,
+                    borderColor: 'rgba(99, 102, 241, 0.2)'
+                  }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.textMuted, marginBottom: 6 }}>
+                      複数枚の範囲指定モード:
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          paddingVertical: 6,
+                          paddingHorizontal: 8,
+                          borderRadius: theme.radius.sm,
+                          backgroundColor: multiCropMode === 'ai' ? theme.colors.accentPrimary : 'transparent',
+                          borderWidth: 1,
+                          borderColor: multiCropMode === 'ai' ? theme.colors.accentPrimary : 'rgba(255, 255, 255, 0.15)',
+                          alignItems: 'center'
+                        }}
+                        onPress={() => setMultiCropMode('ai')}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: multiCropMode === 'ai' ? '#FFF' : theme.colors.textMuted }}>
+                          🤖 AIに任せる (自動分割)
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          paddingVertical: 6,
+                          paddingHorizontal: 8,
+                          borderRadius: theme.radius.sm,
+                          backgroundColor: multiCropMode === 'manual' ? theme.colors.accentPrimary : 'transparent',
+                          borderWidth: 1,
+                          borderColor: multiCropMode === 'manual' ? theme.colors.accentPrimary : 'rgba(255, 255, 255, 0.15)',
+                          alignItems: 'center'
+                        }}
+                        onPress={() => setMultiCropMode('manual')}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: multiCropMode === 'manual' ? '#FFF' : theme.colors.textMuted }}>
+                          ✂️ 1枚ずつ手動指定
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
 
                 {/* グリッド範囲調整カメラ撮影ボタン */}
                 <TouchableOpacity

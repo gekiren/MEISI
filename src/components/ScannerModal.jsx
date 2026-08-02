@@ -29,6 +29,7 @@ export default function ScannerModal({
   const [isMultiScan, setIsMultiScan] = useState(false);
   const [isVertical, setIsVertical] = useState(false);
   const [isDesignCard, setIsDesignCard] = useState(false);
+  const [multiCropMode, setMultiCropMode] = useState('ai'); // 'ai' (AI自動) | 'manual' (1枚ずつ手動指定)
 
   const fileInputRef = useRef(null);
 
@@ -383,6 +384,38 @@ export default function ScannerModal({
                 <span>🎨 デザイン・<br />カラー名刺</span>
               </label>
             </div>
+
+            {isMultiScan && (
+              <div style={{
+                marginBottom: '16px',
+                padding: '10px',
+                background: 'rgba(99, 102, 241, 0.08)',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid rgba(99, 102, 241, 0.2)'
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  複数枚の範囲指定モード:
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    className={`btn ${multiCropMode === 'ai' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ flex: 1, padding: '5px 8px', fontSize: '0.75rem', textAlign: 'center' }}
+                    onClick={() => setMultiCropMode('ai')}
+                  >
+                    🤖 AIに任せる (自動分割)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${multiCropMode === 'manual' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ flex: 1, padding: '5px 8px', fontSize: '0.75rem', textAlign: 'center' }}
+                    onClick={() => setMultiCropMode('manual')}
+                  >
+                    ✂️ 1枚ずつ手動指定
+                  </button>
+                </div>
+              </div>
+            )}
 
             {isNativeScannerAvailable() && (
               <div style={{ marginBottom: '16px' }}>
