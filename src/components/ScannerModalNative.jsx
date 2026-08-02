@@ -77,11 +77,11 @@ export default function ScannerModalNative({
     return `data:image/jpeg;base64,${imageUri}`;
   };
 
-  // 画像選択/撮影後の処理分岐 (複数枚の場合: AIにおまかせ vs 1枚ずつ手動)
+  // 画像選択/撮影後の処理分岐 (複数枚の場合: 一括撮影モード vs 連続撮影モード)
   const processImagesWithChoice = async (imagesList) => {
     if (imagesList.length === 0) return;
 
-    // 1枚のみ、または「AIに任せる」設定の場合は即座に解析へ
+    // 1枚のみ、または「一括撮影モード」設定の場合は即座に解析へ
     if (imagesList.length === 1 || multiCropMode === 'ai') {
       setSelectedImages(imagesList);
       setErrorMsg(null);
@@ -89,17 +89,17 @@ export default function ScannerModalNative({
       return;
     }
 
-    // 複数枚で「手動で範囲調整」モードの場合はダイアログで最終確認
+    // 複数枚で「連続撮影モード」が選ばれている場合
     Alert.alert(
       '複数枚の処理方法',
-      `${imagesList.length} 枚の画像を選択中です。\n\n手動範囲指定モードが選択されています。選択済み画像をそのままAI解析に使用しますか？\nまたは、カメラで1枚ずつ撮影＋範囲指定に切り替えますか？`,
+      `${imagesList.length} 枚の画像を選択中です。\n\n【連続撮影モード】が選択されています。選択済みの画像で解析しますか？\nそれともカメラで1枚ずつ順に連続撮影しますか？`,
       [
         {
-          text: '📷 カメラで1枚ずつ撮影',
+          text: '📸 1枚ずつ連続撮影',
           onPress: () => launchSequentialCameraWithCrop(imagesList.length)
         },
         {
-          text: '🤖 そのままAI解析',
+          text: '📷 選択画像で解析',
           onPress: () => {
             setSelectedImages(imagesList);
             setErrorMsg(null);
