@@ -12,3 +12,12 @@
 
 ### ② サーバー（Worker）接続仕様
 - サーバー（Cloudflare Workers プロキシ）およびクライアント側接続先は、上記の最新モデル (`gemini-3.6-flash` ⇄ `deepseek-v4-flash`) を指定・維持してください。
+
+## 6. OTA 配信（EAS Update）に関する絶対遵守ルール
+
+- **デフォルト配信先ブランチ**: ユーザーから個別に明示的なブランチ指定がない限り、OTA配信（`eas update`）は原則として **`staging` ブランチ (`--branch staging`)** をデフォルトの配信先とすること。
+- **標準配信コマンド**:
+  ```powershell
+  eas update --platform android --branch staging --message "<更新内容>" --environment preview
+  ```
+- **iOS OTA 配信制限**: iOS版へのステージングOTA (`eas update -p ios`) はユーザーから個別の明確な実行指示がない限り絶対に実行しない（通常の検証配信は Android のみ）。

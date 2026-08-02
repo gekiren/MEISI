@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Alert, TextInput } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { X, Camera, Sparkles, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, Grid, Layers, Tag as TagIcon } from 'lucide-react-native';
+import { X, Camera, Sparkles, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, Grid, Layers } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import DocumentScanner, { ResponseType } from 'react-native-document-scanner-plugin';
 import { analyzeBusinessCardWithFallback } from '../services/aiService';
 import { addCard } from '../db/db';
 import { theme } from '../theme';
@@ -116,8 +115,8 @@ export default function ScannerModalNative({
     }
   };
 
-  // 通常カメラでのフォールバック撮影 (base64: true, quality: 0.75)
-  const launchCameraFallback = async () => {
+  // グリッド線ガイド付きの範囲調整カメラ撮影 (4点指定ではなく格子状矩形調整)
+  const launchCameraWithGridCrop = async () => {
     try {
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       if (!permissionResult.granted) {
@@ -126,7 +125,9 @@ export default function ScannerModalNative({
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        quality: 0.75,
+        allowsEditing: true,
+        aspect: isVertical ? [2, 3] : [3, 2],
+        quality: 0.85,
         base64: true,
       });
 
@@ -142,57 +143,21 @@ export default function ScannerModalNative({
         startBatchAnalysis([cameraImg]);
       }
     } catch (err) {
-      console.error('Camera fallback error:', err);
+      console.error('Grid camera error:', err);
       setIsAnalyzing(false);
       Alert.alert('エラー', 'カメラの起動に失敗しました。アルバム選択をお試しください。');
     }
   };
 
+  // 通常カメラでのフォールバック撮影 (base64: true, quality: 0.75)
+  const launchCameraFallback = async () => {
+    return launchCameraWithGridCrop();
+  };
+
   // OS標準ドキュメントスキャナーの起動 (ResponseType.Base64, croppedImageQuality: 75)
   const launchNativeDocumentScanner = async () => {
-    try {
-      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permissionResult.granted) {
-        Alert.alert('アクセス権限が必要', 'ドキュメントスキャンを行うにはカメラへのアクセス許可が必要です。');
-        return;
-      }
-
-      const response = await DocumentScanner.scanDocument({
-        croppedImageQuality: 75,
-        maxNumDocuments: isMultiScan ? 4 : 1,
-        responseType: ResponseType.Base64,
-      });
-
-      const scannedImages = response?.scannedImages || [];
-      const status = response?.status;
-
-      if (status !== 'cancel' && scannedImages.length > 0) {
-        if (scannedImages.length >= 5) {
-          Alert.alert('制限超過', '一度にスキャンできる名刺は最大4枚までです。');
-          return;
-        }
-
-        setIsAnalyzing(true);
-        setStatusNotice('撮影画像を読み込み中...');
-
-        const formattedImages = scannedImages.map(img => img.startsWith('data:image') ? img : `data:image/jpeg;base64,${img}`);
-
-        setSelectedImages(formattedImages);
-        setErrorMsg(null);
-        startBatchAnalysis(formattedImages);
-      }
-    } catch (err) {
-      console.error('Document scanner error:', err);
-      setIsAnalyzing(false);
-      Alert.alert(
-        'スキャナー起動エラー',
-        'ドキュメントスキャナーの起動に失敗しました。\n\n通常のカメラで撮影しますか？',
-        [
-          { text: 'アルバム選択', style: 'cancel' },
-          { text: '通常カメラ撮影', onPress: () => launchCameraFallback() }
-        ]
-      );
-    }
+    // 4点指定ではなくグリッド範囲調整カメラへ自動ルーティング
+    return launchCameraWithGridCrop();
   };
 
   // AI解析実行
@@ -412,11 +377,11 @@ export default function ScannerModalNative({
                   </TouchableOpacity>
                 </View>
 
-                {/* OS標準ドキュメントスキャナーボタン */}
+                {/* グリッド範囲調整カメラ撮影ボタン */}
                 <TouchableOpacity
                   activeOpacity={0.8}
                   style={styles.scannerBtnWrapper}
-                  onPress={launchNativeDocumentScanner}
+                  onPress={launchCameraWithGridCrop}
                 >
                   <LinearGradient
                     colors={['#06B6D4', '#3B82F6']}
@@ -426,9 +391,9 @@ export default function ScannerModalNative({
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <ScanLine size={18} color="#FFF" />
-                      <Text style={styles.scannerBtnTitle}>OS標準ドキュメントスキャナーで撮影</Text>
+                      <Text style={styles.scannerBtnTitle}>グリッドガイド付きカメラで撮影</Text>
                     </View>
-                    <Text style={styles.scannerBtnSub}>(背景自動カット・高画質スキャン)</Text>
+                    <Text style={styles.scannerBtnSub}>(4点指定ではなく格子状矩形枠で範囲調整)</Text>
                   </LinearGradient>
                 </TouchableOpacity>
 

@@ -400,14 +400,14 @@ export default function ScannerModal({
                     boxShadow: '0 4px 14px rgba(6, 182, 212, 0.35)',
                     borderRadius: 'var(--radius-md)'
                   }}
-                  onClick={() => scanDocumentWithNativeScanner()}
+                  onClick={() => scanDocumentWithNativeScanner({ isMultiScan })}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', fontWeight: '700' }}>
                     <ScanLine size={18} color="#fff" />
-                    <span>OS標準ドキュメントスキャナーで撮影</span>
+                    <span>グリッドガイド付きカメラで撮影</span>
                   </div>
                   <span style={{ fontSize: '0.76rem', fontWeight: 'normal', opacity: 0.9 }}>
-                    (背景自動カット・高画質スキャン)
+                    (4点指定ではなく格子状矩形枠で範囲調整)
                   </span>
                 </button>
               </div>
