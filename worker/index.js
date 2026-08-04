@@ -4,7 +4,7 @@
  */
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env, _ctx) {
     // CORS ヘッダー
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',

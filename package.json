@@ -5,10 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "start": "expo start",
+    "lint": "oxlint"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
@@ -33,11 +31,8 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.3",
     "eas-cli": "^21.3.0",
     "expo": "^57.0.8",
-    "oxlint": "^1.71.0",
-    "vite": "^8.1.1"
+    "oxlint": "^1.71.0"
   }
 }

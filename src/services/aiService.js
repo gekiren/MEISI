@@ -1,6 +1,6 @@
 import { analyzeBusinessCardWithGemini } from './geminiService';
 import { DEFAULT_WORKER_PROXY_URL } from '../config/constants';
-import { extractTextWithLocalOCR, validateBusinessCardContent, parseOcrTextToCard, isOcrTextValid } from './ocrService';
+import { extractTextWithLocalOCR, parseOcrTextToCard, isOcrTextValid } from './ocrService';
 
 /**
  * DeepSeek V4 API (OpenAI互換) による名刺画像・テキスト構造化サービス

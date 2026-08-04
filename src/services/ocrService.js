@@ -4,7 +4,7 @@ import { createWorker } from 'tesseract.js';
 let TextRecognition = null;
 try {
   TextRecognition = require('@react-native-ml-kit/text-recognition').default;
-} catch (e) {
+} catch {
   // Webビルド環境では無視
 }
 

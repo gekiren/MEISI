@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { StyleSheet, SafeAreaView, StatusBar, View, Text, Alert, ScrollView } from 'react-native';
 import * as Updates from 'expo-updates';
 
-import HeaderNative from './src/components/HeaderNative';
-import CardListNative from './src/components/CardListNative';
-import ScannerModalNative from './src/components/ScannerModalNative';
-import CallKitModalNative from './src/components/CallKitModalNative';
-import CardDetailModalNative from './src/components/CardDetailModalNative';
+import Header from './src/components/Header';
+import CardList from './src/components/CardList';
+import ScannerModal from './src/components/ScannerModal';
+import CallKitModal from './src/components/CallKitModal';
+import CardDetailModal from './src/components/CardDetailModal';
 
-import { getAllCards, updateCard, addCard } from './src/db/db';
+import { getAllCards, updateCard } from './src/db/db';
 import { DEFAULT_WORKER_PROXY_URL } from './src/config/constants';
 import { theme } from './src/theme';
 
@@ -116,7 +116,7 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
       <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 40 }}>
-        <HeaderNative
+        <Header
           onOpenScan={() => setIsScanOpen(true)}
           onOpenCallKit={() => setIsCallKitOpen(true)}
           onExportCSV={() => Alert.alert('通知', '全名刺データをエクスポートできます。')}
@@ -131,7 +131,7 @@ export default function App() {
           </View>
         ) : null}
 
-        <CardListNative
+        <CardList
           cards={filteredCards}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -144,7 +144,7 @@ export default function App() {
       </ScrollView>
 
       {/* ネイティブダイアログ群 */}
-      <ScannerModalNative
+      <ScannerModal
         isOpen={isScanOpen}
         onClose={() => setIsScanOpen(false)}
         geminiApiKey={geminiApiKey}
@@ -153,13 +153,13 @@ export default function App() {
         onCardAdded={loadCards}
       />
 
-      <CallKitModalNative
+      <CallKitModal
         isOpen={isCallKitOpen}
         onClose={() => setIsCallKitOpen(false)}
         cards={cards}
       />
 
-      <CardDetailModalNative
+      <CardDetailModal
         card={selectedCard}
         isOpen={!!selectedCard}
         onClose={() => setSelectedCard(null)}

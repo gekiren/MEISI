@@ -1,5 +1,7 @@
 import React from 'react';
-import { Search, Star, Phone, Mail, Building, Tag, ShieldCheck } from 'lucide-react';
+import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet, ScrollView } from 'react-native';
+import { Search, Star, Phone, Mail, Building, ShieldCheck } from 'lucide-react-native';
+import { theme } from '../theme';
 
 export default function CardList({
   cards,
@@ -12,133 +14,287 @@ export default function CardList({
   onToggleFavorite
 }) {
   return (
-    <div>
-      {/* 検索バー */}
-      <div className="search-container">
-        <div className="search-input-wrapper">
-          <Search className="search-icon" size={18} />
-          <input
-            type="text"
-            className="search-input"
-            placeholder="氏名、会社名、役職、電話番号、キーワードで検索..."
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-          />
-        </div>
-      </div>
+    <View style={styles.container}>
+      {/* 検索入力欄 */}
+      <View style={styles.searchBox}>
+        <Search size={18} color={theme.colors.textMuted} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="氏名、会社名、電話番号、タグで検索..."
+          placeholderTextColor={theme.colors.textDim}
+          value={searchQuery}
+          onChangeText={onSearchChange}
+        />
+      </View>
 
       {/* タグフィルター */}
       {allTags && allTags.length > 0 && (
-        <div className="tag-filter-list">
-          <button
-            className={`tag-pill ${selectedTag === null ? 'active' : ''}`}
-            onClick={() => onTagSelect(null)}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScrollView} contentContainerStyle={styles.tagContainer}>
+          <TouchableOpacity
+            style={[styles.tagPill, selectedTag === null && styles.tagPillActive]}
+            onPress={() => onTagSelect(null)}
           >
-            すべて ({cards.length})
-          </button>
-          <button
-            className={`tag-pill ${selectedTag === 'fav' ? 'active' : ''}`}
-            onClick={() => onTagSelect('fav')}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            <Text style={[styles.tagText, selectedTag === null && styles.tagTextActive]}>
+              すべて ({cards.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tagPill, selectedTag === 'fav' && styles.tagPillActive]}
+            onPress={() => onTagSelect('fav')}
           >
-            <Star size={12} fill={selectedTag === 'fav' ? '#fff' : 'none'} />
-            お気に入り
-          </button>
+            <Star size={12} color={selectedTag === 'fav' ? '#FFF' : theme.colors.textMuted} fill={selectedTag === 'fav' ? '#FFF' : 'none'} style={{ marginRight: 4 }} />
+            <Text style={[styles.tagText, selectedTag === 'fav' && styles.tagTextActive]}>
+              お気に入り
+            </Text>
+          </TouchableOpacity>
+
           {allTags.map((tag) => (
-            <button
+            <TouchableOpacity
               key={tag}
-              className={`tag-pill ${selectedTag === tag ? 'active' : ''}`}
-              onClick={() => onTagSelect(tag)}
+              style={[styles.tagPill, selectedTag === tag && styles.tagPillActive]}
+              onPress={() => onTagSelect(tag)}
             >
-              #{tag}
-            </button>
+              <Text style={[styles.tagText, selectedTag === tag && styles.tagTextActive]}>
+                #{tag}
+              </Text>
+            </TouchableOpacity>
           ))}
-        </div>
+        </ScrollView>
       )}
 
-      {/* 名刺リスト表示 */}
+      {/* リスト表示 */}
       {cards.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '60px 20px',
-          background: 'var(--bg-card)',
-          borderRadius: 'var(--radius-lg)',
-          border: 'var(--glass-border)'
-        }}>
-          <Building size={48} color="var(--text-muted)" style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-          <h3 style={{ fontSize: '1.1rem', marginBottom: '8px', color: 'var(--text-main)' }}>
-            該当する名刺が見つかりません
-          </h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            右上の「名刺スキャン」ボタンから名刺を撮影・解析して追加してください。
-          </p>
-        </div>
+        <View style={styles.emptyContainer}>
+          <Building size={48} color={theme.colors.textDim} style={{ marginBottom: 12, opacity: 0.5 }} />
+          <Text style={styles.emptyTitle}>該当する名刺が見つかりません</Text>
+          <Text style={styles.emptyDesc}>
+            上部の「+ 名刺スキャン」ボタンから名刺を撮影・解析して追加してください。
+          </Text>
+        </View>
       ) : (
-        <div className="card-grid">
+        <View style={styles.cardGrid}>
           {cards.map((card) => (
-            <div
+            <TouchableOpacity
               key={card.id}
-              className="business-card"
-              onClick={() => onCardClick(card)}
+              activeOpacity={0.7}
+              style={styles.cardItem}
+              onPress={() => onCardClick(card)}
             >
-              <div className="card-top">
+              <View style={styles.cardTop}>
                 {card.image ? (
-                  <img src={card.image} alt={card.name} className="card-image-thumb" />
+                  <Image source={{ uri: card.image }} style={styles.cardImageThumb} resizeMode="cover" />
                 ) : (
-                  <div className="card-image-thumb" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B7280' }}>
-                    <Building size={20} />
-                  </div>
+                  <View style={[styles.cardImageThumb, styles.cardImagePlaceholder]}>
+                    <Building size={20} color={theme.colors.textDim} />
+                  </View>
                 )}
-                <div className="card-header-info">
-                  <div className="card-company">{card.company || '会社未指定'}</div>
-                  <div className="card-name">{card.name}</div>
-                  <div className="card-title-dept">
+                <View style={styles.cardHeaderInfo}>
+                  <Text style={styles.cardCompany} numberOfLines={1}>
+                    {card.company || '会社未指定'}
+                  </Text>
+                  <Text style={styles.cardName} numberOfLines={1}>
+                    {card.name}
+                  </Text>
+                  <Text style={styles.cardTitleDept} numberOfLines={1}>
                     {card.title} {card.department ? `(${card.department})` : ''}
-                  </div>
-                </div>
-              </div>
+                  </Text>
+                </View>
+              </View>
 
-              <div className="card-body">
-                {card.phone && (
-                  <div className="card-info-item">
-                    <Phone size={14} color="#38BDF8" />
-                    <span>{card.phone}</span>
-                    <ShieldCheck size={14} color="#06B6D4" title="CallKit 着信識別同期中" />
-                  </div>
-                )}
-                {card.email && (
-                  <div className="card-info-item">
-                    <Mail size={14} color="#9CA3AF" />
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {card.email}
-                    </span>
-                  </div>
-                )}
-              </div>
+              <View style={styles.cardBody}>
+                {card.phone ? (
+                  <View style={styles.infoRow}>
+                    <Phone size={13} color="#38BDF8" style={{ marginRight: 6 }} />
+                    <Text style={styles.infoText}>{card.phone}</Text>
+                    <ShieldCheck size={13} color={theme.colors.accentCyan} style={{ marginLeft: 4 }} />
+                  </View>
+                ) : null}
 
-              <div className="card-footer">
-                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {card.email ? (
+                  <View style={styles.infoRow}>
+                    <Mail size={13} color={theme.colors.textMuted} style={{ marginRight: 6 }} />
+                    <Text style={styles.infoText} numberOfLines={1}>{card.email}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.cardFooter}>
+                <View style={styles.tagPillsRow}>
                   {card.tags && card.tags.slice(0, 2).map((t, i) => (
-                    <span key={i} style={{ fontSize: '0.7rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px' }}>
-                      #{t}
-                    </span>
+                    <View key={i} style={styles.miniTag}>
+                      <Text style={styles.miniTagText}>#{t}</Text>
+                    </View>
                   ))}
-                </div>
+                </View>
 
-                <button
-                  className={`fav-btn ${card.isFavorite ? 'active' : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleFavorite(card);
-                  }}
+                <TouchableOpacity
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  onPress={() => onToggleFavorite(card)}
+                  style={styles.favBtn}
                 >
-                  <Star size={18} fill={card.isFavorite ? '#F59E0B' : 'none'} />
-                </button>
-              </div>
-            </div>
+                  <Star size={18} color={card.isFavorite ? '#F59E0B' : theme.colors.textDim} fill={card.isFavorite ? '#F59E0B' : 'none'} />
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
           ))}
-        </div>
+        </View>
       )}
-    </div>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.bgInput,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 42,
+    color: theme.colors.textMain,
+    fontSize: 14,
+  },
+  tagScrollView: {
+    marginBottom: 16,
+  },
+  tagContainer: {
+    gap: 8,
+  },
+  tagPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: theme.colors.bgGlass,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.full,
+  },
+  tagPillActive: {
+    backgroundColor: theme.colors.accentPrimary,
+    borderColor: theme.colors.accentPrimary,
+  },
+  tagText: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+  },
+  tagTextActive: {
+    color: '#FFF',
+    fontWeight: '700',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 36,
+    backgroundColor: theme.colors.bgCard,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.colors.textMain,
+    marginBottom: 6,
+  },
+  emptyDesc: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+  },
+  cardGrid: {
+    gap: 12,
+  },
+  cardItem: {
+    backgroundColor: theme.colors.bgCard,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 14,
+  },
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  cardImageThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: theme.radius.md,
+  },
+  cardImagePlaceholder: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardHeaderInfo: {
+    flex: 1,
+  },
+  cardCompany: {
+    fontSize: 11,
+    color: theme.colors.accentCyan,
+    fontWeight: '600',
+  },
+  cardName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.colors.textMain,
+    marginVertical: 2,
+  },
+  cardTitleDept: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+  },
+  cardBody: {
+    gap: 4,
+    marginBottom: 10,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  infoText: {
+    fontSize: 12,
+    color: theme.colors.textMain,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+  tagPillsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  miniTag: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  miniTagText: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+  },
+  favBtn: {
+    padding: 2,
+  },
+});
