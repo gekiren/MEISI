@@ -18,6 +18,8 @@
     "expo-file-system": "^57.0.1",
     "expo-image-picker": "^57.0.6",
     "expo-linear-gradient": "^57.0.1",
+    "expo-sharing": "~57.0.8",
+    "expo-sqlite": "~57.0.1",
     "expo-updates": "~57.0.10",
     "lucide-react": "^1.27.0",
     "lucide-react-native": "^1.27.0",

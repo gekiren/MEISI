@@ -3,6 +3,10 @@
  * 標準連絡先アプリへ登録することなく、着信時に相手名（氏名・会社名）を表示するための識別データ生成
  */
 
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as Clipboard from 'expo-clipboard';
+import { Alert } from 'react-native';
 import { normalizePhoneNumber } from '../db/db';
 
 /**
@@ -53,7 +57,7 @@ export function generateCallKitDirectoryData(cards) {
 /**
  * CallKit 着信識別用 CSV/テキストファイルをダウンロード出力
  */
-export function exportCallKitFile(cards) {
+export async function exportCallKitFile(cards) {
   const entries = generateCallKitDirectoryData(cards);
   
   let content = "# MeisiScan CallKit Identification Database\n";
@@ -62,14 +66,27 @@ export function exportCallKitFile(cards) {
     content += `${e.phone},"${e.label}"\n`;
   });
 
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', `MeisiScan_CallKit_Entries_${new Date().toISOString().slice(0,10)}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const filename = `MeisiScan_CallKit_Entries_${new Date().toISOString().slice(0,10)}.csv`;
+  try {
+    const fileUri = `${FileSystem.documentDirectory}${filename}`;
+    await FileSystem.writeAsStringAsync(fileUri, content, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        dialogTitle: 'CallKit 識別データを共有',
+        UTI: 'public.comma-separated-values-text',
+      });
+    } else {
+      Alert.alert('エラー', 'この端末ではファイル共有機能がサポートされていません。');
+    }
+  } catch (err) {
+    console.error('CallKit ファイル共有エラー:', err);
+    Alert.alert('エラー', 'CallKitファイルの共有に失敗しました。');
+  }
 }
 
 /**
@@ -92,28 +109,19 @@ export function generateVCard(card) {
 }
 
 /**
- * iOS Shortcut / Web Share API を使用して CallKit 同期データを共有
+ * CallKit 同期データをクリップボードにコピーして共有
  */
 export async function shareCallKitData(cards) {
   const entries = generateCallKitDirectoryData(cards);
   const textContent = entries.map(e => `${e.phone} -> ${e.label}`).join('\n');
 
-  if (navigator.share) {
-    try {
-      await navigator.share({
-        title: 'MeisiScan CallKit 識別データ',
-        text: `名刺 ${cards.length} 件の CallKit 着信相手表示用データ:\n\n` + textContent
-      });
-      return true;
-    } catch (err) {
-      if (err.name !== 'AbortError') {
-        console.error('Share error:', err);
-      }
-    }
-  } else {
-    // クリップボードにコピー
-    await navigator.clipboard.writeText(textContent);
-    alert('CallKit 着信識別データをクリップボードにコピーしました！');
+  try {
+    await Clipboard.setStringAsync(textContent);
+    Alert.alert('完了', 'CallKit 着信識別データをクリップボードにコピーしました！');
+    return true;
+  } catch (err) {
+    console.error('クリップボードコピーエラー:', err);
+    Alert.alert('エラー', 'クリップボードへのコピーに失敗しました。');
+    return false;
   }
-  return false;
 }

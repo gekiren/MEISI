@@ -1,10 +1,14 @@
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { Alert } from 'react-native';
+
 /**
  * 名刺データの CSV 出力 (UTF-8 BOM付き Excel対応) サービス
  */
 
-export function exportCardsToCSV(cards, filename = 'meisi_export.csv') {
+export async function exportCardsToCSV(cards, filename = 'meisi_export.csv') {
   if (!cards || cards.length === 0) {
-    alert('エクスポートする名刺データがありません。');
+    Alert.alert('通知', 'エクスポートする名刺データがありません。');
     return;
   }
 
@@ -52,12 +56,24 @@ export function exportCardsToCSV(cards, filename = 'meisi_export.csv') {
 
   const csvContent = '\uFEFF' + [headers.map(escapeCSV).join(','), ...rows.map(r => r.join(','))].join('\r\n');
 
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  try {
+    const fileUri = `${FileSystem.documentDirectory}${filename}`;
+    await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        dialogTitle: '名刺データをCSV共有',
+        UTI: 'public.comma-separated-values-text',
+      });
+    } else {
+      Alert.alert('エラー', 'この端末ではファイル共有機能がサポートされていません。');
+    }
+  } catch (err) {
+    console.error('CSV エクスポート失敗:', err);
+    Alert.alert('エラー', 'CSVファイルのエクスポートに失敗しました。');
+  }
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { StyleSheet, SafeAreaView, StatusBar, View, Text, Alert, ScrollView } from 'react-native';
+import { StyleSheet, SafeAreaView, StatusBar, View, Text, ScrollView } from 'react-native';
 import * as Updates from 'expo-updates';
 
 import Header from './src/components/Header';
@@ -8,7 +8,8 @@ import ScannerModal from './src/components/ScannerModal';
 import CallKitModal from './src/components/CallKitModal';
 import CardDetailModal from './src/components/CardDetailModal';
 
-import { getAllCards, updateCard } from './src/db/db';
+import { initDatabase, getAllCards, updateCard } from './src/db/db';
+import { exportCardsToCSV } from './src/services/csvService';
 import { DEFAULT_WORKER_PROXY_URL } from './src/config/constants';
 import { theme } from './src/theme';
 
@@ -38,7 +39,15 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadCards();
+    const init = async () => {
+      try {
+        await initDatabase();
+        await loadCards();
+      } catch (err) {
+        console.error('Failed to initialize DB or load cards:', err);
+      }
+    };
+    init();
   }, []);
 
   // OTAアップデートの手動チェック機能
@@ -119,7 +128,7 @@ export default function App() {
         <Header
           onOpenScan={() => setIsScanOpen(true)}
           onOpenCallKit={() => setIsCallKitOpen(true)}
-          onExportCSV={() => Alert.alert('通知', '全名刺データをエクスポートできます。')}
+          onExportCSV={() => exportCardsToCSV(cards)}
           onCheckOta={handleCheckOta}
           isCheckingOta={isCheckingOta}
           cardCount={cards.length}
