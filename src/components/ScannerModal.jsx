@@ -4,7 +4,8 @@ import { X, Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { analyzeBusinessCardWithFallback } from '../services/aiService';
-import { addCard } from '../db/db';
+import { addCard, updateCard, getAllCards } from '../db/db';
+import { findDuplicateCard } from '../utils/duplicateCheck';
 import { theme } from '../theme';
 import ScanOptionSelector from './scanner/ScanOptionSelector';
 import ExtractedCardEditor from './scanner/ExtractedCardEditor';
@@ -402,6 +403,34 @@ export default function ScannerModal({
     }
   };
 
+  const promptDuplicateChoice = (newCard, duplicateCard) => {
+    return new Promise((resolve) => {
+      const dupName = duplicateCard.name || '名前なし';
+      const dupCompany = duplicateCard.company ? ` (${duplicateCard.company})` : '';
+
+      Alert.alert(
+        '重複の可能性がある名刺を検出',
+        `「${dupName}${dupCompany}」と類似した既存名刺が見つかりました。\n\nどのように処理しますか？`,
+        [
+          {
+            text: '上書き更新',
+            onPress: () => resolve('overwrite'),
+          },
+          {
+            text: '新規追加',
+            onPress: () => resolve('create_new'),
+          },
+          {
+            text: 'キャンセル',
+            style: 'cancel',
+            onPress: () => resolve('cancel'),
+          },
+        ],
+        { cancelable: true, onDismiss: () => resolve('cancel') }
+      );
+    });
+  };
+
   const handleSaveAllCards = async () => {
     if (extractedCards.length === 0) return;
 
@@ -414,12 +443,39 @@ export default function ScannerModal({
     }
 
     try {
-      for (const card of extractedCards) {
-        await addCard(card);
+      const existingCards = await getAllCards();
+      let savedCount = 0;
+
+      for (let i = 0; i < extractedCards.length; i++) {
+        const card = extractedCards[i];
+        const duplicateCard = findDuplicateCard(card, existingCards);
+
+        if (duplicateCard) {
+          setActiveCardIndex(i);
+          const choice = await promptDuplicateChoice(card, duplicateCard);
+
+          if (choice === 'cancel') {
+            return;
+          }
+
+          if (choice === 'overwrite') {
+            await updateCard(duplicateCard.id, { ...card, id: duplicateCard.id });
+            savedCount++;
+          } else if (choice === 'create_new') {
+            await addCard(card);
+            savedCount++;
+          }
+        } else {
+          await addCard(card);
+          savedCount++;
+        }
       }
-      Alert.alert('成功', `${extractedCards.length} 件の名刺を保存しました！`);
-      onCardAdded();
-      onClose();
+
+      if (savedCount > 0) {
+        Alert.alert('成功', `${savedCount} 件の名刺を保存・更新しました！`);
+        onCardAdded();
+        onClose();
+      }
     } catch (err) {
       console.error('Failed to save cards:', err);
       Alert.alert('エラー', '名刺の保存に失敗しました。');

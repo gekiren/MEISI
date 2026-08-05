@@ -23,7 +23,9 @@
         "backgroundColor": "#0B0F19"
       },
       "package": "com.gekiren.meisi",
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "plugins": [
       [
@@ -31,7 +33,9 @@
         {
           "cameraPermission": "名刺撮影およびドキュメントスキャンのためにカメラを使用します。"
         }
-      ]
+      ],
+      "expo-sharing",
+      "expo-sqlite"
     ],
     "extra": {
       "eas": {
