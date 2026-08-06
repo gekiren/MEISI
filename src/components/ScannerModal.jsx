@@ -127,7 +127,7 @@ export default function ScannerModal({
         try {
           result = await ImagePicker.launchCameraAsync({
             allowsEditing: true,
-            aspect: [3, 2],
+            aspect: isVertical ? [2, 3] : [3, 2],
             quality: 0.65,
             base64: true,
           });
@@ -265,7 +265,7 @@ export default function ScannerModal({
       try {
         result = await ImagePicker.launchCameraAsync({
           allowsEditing: true,
-          aspect: [3, 2],
+          aspect: isVertical ? [2, 3] : [3, 2],
           quality: 0.65,
           base64: true,
         });
