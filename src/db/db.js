@@ -15,12 +15,28 @@ export async function getDB() {
   return dbInstance;
 }
 
-// 電話番号の正規化（ハイフン除去・CallKit検索用）
+// 電話番号の正規化（ハイフン除去・国内形式 0始まり）
 export function normalizePhoneNumber(phone) {
+  if (!phone) return '';
+  let cleaned = phone.replace(/[^\d+]/g, '');
+  if (cleaned.startsWith('+81')) {
+    cleaned = '0' + cleaned.substring(3);
+  } else if (cleaned.startsWith('81') && cleaned.length >= 10 && !cleaned.startsWith('0')) {
+    cleaned = '0' + cleaned.substring(2);
+  }
+  return cleaned;
+}
+
+// 国際電話番号形式（+81...）に変換
+export function toInternationalPhoneNumber(phone) {
   if (!phone) return '';
   let cleaned = phone.replace(/[^\d+]/g, '');
   if (cleaned.startsWith('0')) {
     cleaned = '+81' + cleaned.substring(1);
+  } else if (!cleaned.startsWith('+') && cleaned.startsWith('81')) {
+    cleaned = '+' + cleaned;
+  } else if (!cleaned.startsWith('+') && !cleaned.startsWith('0')) {
+    cleaned = '+81' + cleaned;
   }
   return cleaned;
 }

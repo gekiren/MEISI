@@ -7,7 +7,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { Alert } from 'react-native';
-import { normalizePhoneNumber } from '../db/db';
+import { normalizePhoneNumber, toInternationalPhoneNumber } from '../db/db';
 
 /**
  * 会社名から「株式会社」「有限会社」などの法人種別表記（法人格表記）を除去して文字数を削減
@@ -22,32 +22,46 @@ export function cleanCompanyName(company) {
 /**
  * 名刺リストから CallKit 準拠の着信識別データベース形式テキストを生成
  * iOS CallDirectory の仕様: 電話番号は昇順（昇順で数値ソート）
+ * 国内形式(03..., 070...)と国際形式(+81...)の両方を登録して着信表示漏れを防止
  */
 export function generateCallKitDirectoryData(cards) {
   const entries = [];
+  const addedNumbers = new Set();
 
   cards.forEach(card => {
     const cleanedCompany = cleanCompanyName(card.company);
     const label = `${card.name}${cleanedCompany ? ` (${cleanedCompany})` : ''} [MeisiScan]`;
-    
-    if (card.phone) {
-      const normPhone = normalizePhoneNumber(card.phone);
-      if (normPhone) {
-        entries.push({ phone: normPhone, label, originalCard: card });
+
+    const addPhoneEntries = (rawPhone, labelText) => {
+      if (!rawPhone) return;
+
+      const national = normalizePhoneNumber(rawPhone);
+      const international = toInternationalPhoneNumber(rawPhone);
+
+      // 国内番号形式 (0始まり) の追加
+      if (national && !addedNumbers.has(national)) {
+        entries.push({ phone: national, label: labelText, originalCard: card });
+        addedNumbers.add(national);
       }
+      // 国際番号形式 (+81) の追加
+      if (international && !addedNumbers.has(international)) {
+        entries.push({ phone: international, label: labelText, originalCard: card });
+        addedNumbers.add(international);
+      }
+    };
+
+    if (card.phone) {
+      addPhoneEntries(card.phone, label);
     }
     if (card.mobile) {
-      const normMobile = normalizePhoneNumber(card.mobile);
-      if (normMobile && normMobile !== normalizePhoneNumber(card.phone)) {
-        entries.push({ phone: normMobile, label: `${label} (携帯)`, originalCard: card });
-      }
+      addPhoneEntries(card.mobile, `${label} (携帯)`);
     }
   });
 
   // 数値表現での昇順ソート（CallKitの必須仕様）
   entries.sort((a, b) => {
-    const numA = BigInt(a.phone.replace('+', ''));
-    const numB = BigInt(b.phone.replace('+', ''));
+    const numA = BigInt(a.phone.replace(/[^\d]/g, ''));
+    const numB = BigInt(b.phone.replace(/[^\d]/g, ''));
     return numA < numB ? -1 : numA > numB ? 1 : 0;
   });
 
