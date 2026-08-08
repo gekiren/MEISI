@@ -129,23 +129,20 @@ export default function ScannerModal({
             allowsEditing: true,
             aspect: isVertical ? [2, 3] : [3, 2],
             quality: 0.65,
-            base64: true,
+            base64: false,
           });
         } catch (cropErr) {
           console.warn('Sequential cropped camera launch failed, retrying without crop:', cropErr);
           result = await ImagePicker.launchCameraAsync({
             allowsEditing: false,
             quality: 0.65,
-            base64: true,
+            base64: false,
           });
         }
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
           const asset = result.assets[0];
-          const img = asset.base64
-            ? `data:image/jpeg;base64,${asset.base64}`
-            : asset.uri;
-          capturedList.push(img);
+          capturedList.push(asset.uri);
         } else {
           aborted = true;
         }
@@ -224,7 +221,7 @@ export default function ScannerModal({
         allowsMultipleSelection: isMultiScan,
         selectionLimit: isMultiScan ? 4 : 1,
         quality: 0.75,
-        base64: true,
+        base64: false,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -233,13 +230,7 @@ export default function ScannerModal({
           return;
         }
 
-        const images = result.assets.map(asset => {
-          if (asset.base64) {
-            return `data:image/jpeg;base64,${asset.base64}`;
-          }
-          return asset.uri;
-        }).filter(Boolean);
-
+        const images = result.assets.map(asset => asset.uri).filter(Boolean);
         processImagesWithChoice(images);
       }
     } catch (err) {
@@ -267,14 +258,14 @@ export default function ScannerModal({
           allowsEditing: true,
           aspect: isVertical ? [2, 3] : [3, 2],
           quality: 0.65,
-          base64: true,
+          base64: false,
         });
       } catch (cropErr) {
         console.warn('Cropped camera launch failed, retrying without crop:', cropErr);
         result = await ImagePicker.launchCameraAsync({
           allowsEditing: false,
           quality: 0.65,
-          base64: true,
+          base64: false,
         });
       }
 
@@ -283,7 +274,7 @@ export default function ScannerModal({
         setStatusNotice('撮影画像を読み込み中...');
 
         const asset = result.assets[0];
-        const cameraImg = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        const cameraImg = asset.uri;
 
         setSelectedImages([cameraImg]);
         setErrorMsg(null);
@@ -301,6 +292,14 @@ export default function ScannerModal({
     setStatusNotice('AI 解析を実行中...');
     setErrorMsg(null);
     setExtractedCards([]);
+
+    // 45秒のセーフティタイムアウト（フリーズ防止用ガード）
+    let isTimedOut = false;
+    const timeoutId = setTimeout(() => {
+      isTimedOut = true;
+      setIsAnalyzing(false);
+      setErrorMsg('AI解析が応答時間を超過しました（45秒）。ネットワーク状態をご確認の上、もう一度お試しください。');
+    }, 45000);
 
     const effectiveMultiScan = isMultiScan || imagesList.length > 1;
     const scanOptions = { isVertical, isDesignCard, isMultiScan: effectiveMultiScan };
@@ -397,8 +396,11 @@ export default function ScannerModal({
         }
       }
     } catch (err) {
-      setErrorMsg(err.message || 'AI解析に失敗しました。鮮明な画像で再試行してください。');
+      if (!isTimedOut) {
+        setErrorMsg(err.message || 'AI解析に失敗しました。鮮明な画像で再試行してください。');
+      }
     } finally {
+      clearTimeout(timeoutId);
       setIsAnalyzing(false);
     }
   };
