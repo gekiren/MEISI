@@ -30,6 +30,7 @@ export default function ScannerModal({
   const [isVertical, setIsVertical] = useState(false);
   const [isDesignCard, setIsDesignCard] = useState(false);
   const [multiCropMode, setMultiCropMode] = useState('ai');
+  const [showCountPickerModal, setShowCountPickerModal] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -45,6 +46,7 @@ export default function ScannerModal({
     setIsAnalyzing(false);
     setStatusNotice(null);
     setMultiCropMode('ai');
+    setShowCountPickerModal(false);
   };
 
   const ensureBase64Image = async (imageUri) => {
@@ -129,23 +131,20 @@ export default function ScannerModal({
             allowsEditing: true,
             aspect: isVertical ? [2, 3] : [3, 2],
             quality: 0.65,
-            base64: true,
+            base64: false,
           });
         } catch (cropErr) {
           console.warn('Sequential cropped camera launch failed, retrying without crop:', cropErr);
           result = await ImagePicker.launchCameraAsync({
             allowsEditing: false,
             quality: 0.65,
-            base64: true,
+            base64: false,
           });
         }
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
           const asset = result.assets[0];
-          const img = asset.base64
-            ? `data:image/jpeg;base64,${asset.base64}`
-            : asset.uri;
-          capturedList.push(img);
+          capturedList.push(asset.uri);
         } else {
           aborted = true;
         }
@@ -163,17 +162,7 @@ export default function ScannerModal({
   };
 
   const launchManualMultiCamera = () => {
-    Alert.alert(
-      '撮影枚数を選択',
-      '何枚の名刺を撮影しますか？\n（最大4枚）',
-      [
-        { text: '1枚', onPress: () => launchSequentialCameraWithCrop(1) },
-        { text: '2枚', onPress: () => launchSequentialCameraWithCrop(2) },
-        { text: '3枚', onPress: () => launchSequentialCameraWithCrop(3) },
-        { text: '4枚', onPress: () => launchSequentialCameraWithCrop(4) },
-        { text: 'キャンセル', style: 'cancel' },
-      ]
-    );
+    setShowCountPickerModal(true);
   };
 
   const processImagesWithChoice = async (imagesList) => {
@@ -224,7 +213,7 @@ export default function ScannerModal({
         allowsMultipleSelection: isMultiScan,
         selectionLimit: isMultiScan ? 4 : 1,
         quality: 0.75,
-        base64: true,
+        base64: false,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -233,13 +222,7 @@ export default function ScannerModal({
           return;
         }
 
-        const images = result.assets.map(asset => {
-          if (asset.base64) {
-            return `data:image/jpeg;base64,${asset.base64}`;
-          }
-          return asset.uri;
-        }).filter(Boolean);
-
+        const images = result.assets.map(asset => asset.uri).filter(Boolean);
         processImagesWithChoice(images);
       }
     } catch (err) {
@@ -267,14 +250,14 @@ export default function ScannerModal({
           allowsEditing: true,
           aspect: isVertical ? [2, 3] : [3, 2],
           quality: 0.65,
-          base64: true,
+          base64: false,
         });
       } catch (cropErr) {
         console.warn('Cropped camera launch failed, retrying without crop:', cropErr);
         result = await ImagePicker.launchCameraAsync({
           allowsEditing: false,
           quality: 0.65,
-          base64: true,
+          base64: false,
         });
       }
 
@@ -283,7 +266,7 @@ export default function ScannerModal({
         setStatusNotice('撮影画像を読み込み中...');
 
         const asset = result.assets[0];
-        const cameraImg = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        const cameraImg = asset.uri;
 
         setSelectedImages([cameraImg]);
         setErrorMsg(null);
@@ -301,6 +284,14 @@ export default function ScannerModal({
     setStatusNotice('AI 解析を実行中...');
     setErrorMsg(null);
     setExtractedCards([]);
+
+    // 45秒のセーフティタイムアウト（フリーズ防止用ガード）
+    let isTimedOut = false;
+    const timeoutId = setTimeout(() => {
+      isTimedOut = true;
+      setIsAnalyzing(false);
+      setErrorMsg('AI解析が応答時間を超過しました（45秒）。ネットワーク状態をご確認の上、もう一度お試しください。');
+    }, 45000);
 
     const effectiveMultiScan = isMultiScan || imagesList.length > 1;
     const scanOptions = { isVertical, isDesignCard, isMultiScan: effectiveMultiScan };
@@ -397,8 +388,11 @@ export default function ScannerModal({
         }
       }
     } catch (err) {
-      setErrorMsg(err.message || 'AI解析に失敗しました。鮮明な画像で再試行してください。');
+      if (!isTimedOut) {
+        setErrorMsg(err.message || 'AI解析に失敗しました。鮮明な画像で再試行してください。');
+      }
     } finally {
+      clearTimeout(timeoutId);
       setIsAnalyzing(false);
     }
   };
@@ -554,6 +548,48 @@ export default function ScannerModal({
           </ScrollView>
         </View>
       </View>
+
+      {/* 撮影枚数選択カスタムモーダル */}
+      <Modal
+        visible={showCountPickerModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCountPickerModal(false)}
+      >
+        <View style={styles.countModalOverlay}>
+          <View style={styles.countModalContent}>
+            <Text style={styles.countModalTitle}>撮影枚数を選択</Text>
+            <Text style={styles.countModalSubTitle}>
+              何枚の名刺を撮影しますか？（最大4枚）
+            </Text>
+
+            <View style={styles.countGrid}>
+              {[1, 2, 3, 4].map((count) => (
+                <TouchableOpacity
+                  key={count}
+                  style={styles.countCard}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowCountPickerModal(false);
+                    launchSequentialCameraWithCrop(count);
+                  }}
+                >
+                  <Text style={styles.countCardNum}>{count}</Text>
+                  <Text style={styles.countCardUnit}>枚</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.countCancelBtn}
+              activeOpacity={0.7}
+              onPress={() => setShowCountPickerModal(false)}
+            >
+              <Text style={styles.countCancelBtnText}>キャンセル</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -634,5 +670,76 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#F87171',
+  },
+  countModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  countModalContent: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: theme.colors.bgModal,
+    borderRadius: theme.radius.lg,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+  },
+  countModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.colors.textMain,
+    marginBottom: 8,
+  },
+  countModalSubTitle: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  countGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 12,
+    width: '100%',
+    marginBottom: 20,
+  },
+  countCard: {
+    width: '47%',
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    borderWidth: 1,
+    borderColor: theme.colors.accentPrimary,
+    borderRadius: theme.radius.md,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  countCardNum: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: theme.colors.accentPrimary,
+  },
+  countCardUnit: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.textMain,
+  },
+  countCancelBtn: {
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: theme.radius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+  },
+  countCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.textMuted,
   },
 });

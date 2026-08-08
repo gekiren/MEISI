@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet, Image, TextInput, Alert, Linking, Platform } from 'react-native';
-import { X, Phone, Mail, MapPin, Building, Star, Trash2, Edit2, ShieldCheck, Globe, Copy, Plus, Tag } from 'lucide-react-native';
+import { X, Phone, Mail, MapPin, Building, Star, Trash2, Edit2, ShieldCheck, Globe, Copy, Plus, Tag, ZoomIn } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { updateCard, deleteCard } from '../db/db';
 import { theme } from '../theme';
+import ImageViewerModal from './ImageViewerModal';
 
 export default function CardDetailModal({ card, isOpen, onClose, onUpdated }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState(card);
   const [toastMessage, setToastMessage] = useState('');
   const [newTagInput, setNewTagInput] = useState('');
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
 
   if (!isOpen || !card) return null;
 
@@ -155,7 +157,17 @@ export default function CardDetailModal({ card, isOpen, onClose, onUpdated }) {
           <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 24 }}>
             {/* 名刺プレビュー */}
             {card.image ? (
-              <Image source={{ uri: card.image }} style={styles.previewImage} resizeMode="contain" />
+              <TouchableOpacity
+                style={styles.imagePreviewWrapper}
+                onPress={() => setIsImageViewerOpen(true)}
+                activeOpacity={0.85}
+              >
+                <Image source={{ uri: card.image }} style={styles.previewImage} resizeMode="contain" />
+                <View style={styles.zoomBadge}>
+                  <ZoomIn size={14} color="#FFF" />
+                  <Text style={styles.zoomBadgeText}>タップで拡大</Text>
+                </View>
+              </TouchableOpacity>
             ) : null}
 
             {isEditing ? (
@@ -399,6 +411,15 @@ export default function CardDetailModal({ card, isOpen, onClose, onUpdated }) {
           </ScrollView>
         </View>
       </View>
+
+      {/* 全画面画像拡大モーダル */}
+      <ImageViewerModal
+        isOpen={isImageViewerOpen}
+        onClose={() => setIsImageViewerOpen(false)}
+        imageUri={card.image}
+        title={card.name}
+        subtitle={card.company}
+      />
     </Modal>
   );
 }
@@ -476,12 +497,37 @@ const styles = StyleSheet.create({
   modalBody: {
     padding: 16,
   },
+  imagePreviewWrapper: {
+    position: 'relative',
+    width: '100%',
+    marginBottom: 16,
+    borderRadius: theme.radius.md,
+    overflow: 'hidden',
+  },
   previewImage: {
     width: '100%',
     height: 180,
     borderRadius: theme.radius.md,
-    marginBottom: 16,
     backgroundColor: '#000',
+  },
+  zoomBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  zoomBadgeText: {
+    fontSize: 11,
+    color: '#FFF',
+    fontWeight: '600',
   },
   detailContainer: {
     gap: 14,
