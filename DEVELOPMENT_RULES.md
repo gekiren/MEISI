@@ -21,5 +21,6 @@
   ```powershell
   eas update --platform android --branch staging --message "<更新内容>" --environment preview
   ```
+- **デバッグ用ビルド使用禁止の原則**: 本プロジェクトでは、PC側で開発サーバー（Metro等）の起動が必要となるデバッグ用アプリ/ビルド（`assembleDebug` 等）は、ユーザーから個別に明示的な指示がない限り使用しないこと。ローカルビルドを行う際は、JavaScript バンドルがアプリ内に埋め込まれ、PCサーバーなしで単体動作するビルド（`assembleRelease` 等）を必ず使用すること。
 - **iOS OTA 配信制限**: iOS版へのステージングOTA (`eas update -p ios`) はユーザーから個別の明確な実行指示がない限り絶対に実行しない（通常の検証配信は Android のみ）。
 

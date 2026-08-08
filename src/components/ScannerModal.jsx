@@ -30,6 +30,7 @@ export default function ScannerModal({
   const [isVertical, setIsVertical] = useState(false);
   const [isDesignCard, setIsDesignCard] = useState(false);
   const [multiCropMode, setMultiCropMode] = useState('ai');
+  const [showCountPickerModal, setShowCountPickerModal] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -45,6 +46,7 @@ export default function ScannerModal({
     setIsAnalyzing(false);
     setStatusNotice(null);
     setMultiCropMode('ai');
+    setShowCountPickerModal(false);
   };
 
   const ensureBase64Image = async (imageUri) => {
@@ -160,17 +162,7 @@ export default function ScannerModal({
   };
 
   const launchManualMultiCamera = () => {
-    Alert.alert(
-      '撮影枚数を選択',
-      '何枚の名刺を撮影しますか？\n（最大4枚）',
-      [
-        { text: '1枚', onPress: () => launchSequentialCameraWithCrop(1) },
-        { text: '2枚', onPress: () => launchSequentialCameraWithCrop(2) },
-        { text: '3枚', onPress: () => launchSequentialCameraWithCrop(3) },
-        { text: '4枚', onPress: () => launchSequentialCameraWithCrop(4) },
-        { text: 'キャンセル', style: 'cancel' },
-      ]
-    );
+    setShowCountPickerModal(true);
   };
 
   const processImagesWithChoice = async (imagesList) => {
@@ -556,6 +548,48 @@ export default function ScannerModal({
           </ScrollView>
         </View>
       </View>
+
+      {/* 撮影枚数選択カスタムモーダル */}
+      <Modal
+        visible={showCountPickerModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCountPickerModal(false)}
+      >
+        <View style={styles.countModalOverlay}>
+          <View style={styles.countModalContent}>
+            <Text style={styles.countModalTitle}>撮影枚数を選択</Text>
+            <Text style={styles.countModalSubTitle}>
+              何枚の名刺を撮影しますか？（最大4枚）
+            </Text>
+
+            <View style={styles.countGrid}>
+              {[1, 2, 3, 4].map((count) => (
+                <TouchableOpacity
+                  key={count}
+                  style={styles.countCard}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowCountPickerModal(false);
+                    launchSequentialCameraWithCrop(count);
+                  }}
+                >
+                  <Text style={styles.countCardNum}>{count}</Text>
+                  <Text style={styles.countCardUnit}>枚</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.countCancelBtn}
+              activeOpacity={0.7}
+              onPress={() => setShowCountPickerModal(false)}
+            >
+              <Text style={styles.countCancelBtnText}>キャンセル</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -636,5 +670,76 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#F87171',
+  },
+  countModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  countModalContent: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: theme.colors.bgModal,
+    borderRadius: theme.radius.lg,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+  },
+  countModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.colors.textMain,
+    marginBottom: 8,
+  },
+  countModalSubTitle: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  countGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 12,
+    width: '100%',
+    marginBottom: 20,
+  },
+  countCard: {
+    width: '47%',
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    borderWidth: 1,
+    borderColor: theme.colors.accentPrimary,
+    borderRadius: theme.radius.md,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  countCardNum: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: theme.colors.accentPrimary,
+  },
+  countCardUnit: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.textMain,
+  },
+  countCancelBtn: {
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: theme.radius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+  },
+  countCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.textMuted,
   },
 });
